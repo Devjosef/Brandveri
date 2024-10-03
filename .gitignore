@@ -1,0 +1,53 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+dist/
+*.tsbuildinfo
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# MacOS
+.DS_Store
+
+# Editor directories and files
+.idea/
+.vscode/
+*.sublime-workspace
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Build directories
+build/
+out/
+
+# Temporary files
+*.tmp
+*.temp
+
+# CI/CD
+/.github/workflows/*.yml
+
+# Miscellaneous
+*.swp
+*.swo
+*.bak
+*.orig
