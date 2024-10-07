@@ -1,6 +1,6 @@
 import { DataTypes, Model } from 'sequelize';
-import sequelize from '../database';
-import User from './user'; // Fixed casing issue
+import sequelize from '../config';
+import User from './user'; 
 
 
 class TrademarkSearch extends Model {
