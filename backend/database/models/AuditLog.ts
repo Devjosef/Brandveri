@@ -1,6 +1,6 @@
 import { DataTypes, Model } from 'sequelize';
-import sequelize from '../database';
-import User from './user';
+import sequelize from '../config';
+import User from './User';
 
 class AuditLog extends Model {
   public id!: number;

@@ -1,12 +1,12 @@
 import sequelize from './config';
-import User from './models/user';
+import User from './models/User';
 import TrademarkSearch from './models/trademarkSearch';
 import Invoice from './models/invoice';
-import ApiLog from './models/apiLog';
+import ApiLog from './models/ApiLog';
 import Session from './models/sessions';
 import UserPreference from './models/userPreference';
 import Notification from './models/notification';
-import AuditLog from './models/auditLog';
+import AuditLog from './models/AuditLog';
 // Sync all models
 export const syncDatabase = async () => {
   try {

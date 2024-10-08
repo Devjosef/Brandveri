@@ -1,6 +1,6 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
-import User from './user';
+import User from './User';
 import bcrypt from 'bcrypt';
 
 class Session extends Model {

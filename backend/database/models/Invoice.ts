@@ -1,6 +1,6 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
-import User from './user'; // Fixed casing issue
+import User from './User'; 
 
 class Invoice extends Model {
   public id!: number;

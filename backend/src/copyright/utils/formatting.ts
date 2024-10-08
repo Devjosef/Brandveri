@@ -2,4 +2,10 @@ export const formatDate = (date) => {
     return new Date(date).toLocaleDateString();
   };
   
-  // Add more utility functions as needed
+export function formatCopyrightResponse(data: any): any {
+  return {
+      id: data.id,
+      title: data.title,
+      owner: data.owner,
+  };
+}
