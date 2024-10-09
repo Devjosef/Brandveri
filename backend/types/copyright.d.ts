@@ -9,12 +9,22 @@ export interface Copyright {
 
 export interface CopyrightRegistration {
     title: string;
+    author: string;
+    registration_number: string;
+    registration_date: Date;
+    status?: string;
+    country?: string;
     owner: string;
-    registrationDate: Date;
 }
 
 export interface CopyrightSearchParams {
     query: string;
     page?: number;
     limit?: number;
+}
+
+export interface ApiResponse<T> {
+    success: boolean;
+    data: T;
+    error: string;
 }

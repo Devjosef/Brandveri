@@ -1,53 +1,191 @@
-import { CopyrightRepository } from './copyrightRepository'; // Repository for database operations
-import { Copyright } from './copyrightModel'; // Copyright model definition
+import CopyrightSearch from '../../../database/models/copyrightSearch';
+import { Op } from 'sequelize';
+import { CopyrightSearchParams, CopyrightRegistration } from '../../../types/copyright';
 
 class CopyrightService {
-    private copyrightRepository: CopyrightRepository;
-
-    constructor(copyrightRepository: CopyrightRepository) {
-        this.copyrightRepository = copyrightRepository;
+  
+  /**
+   * Get all copyright records with optional filtering.
+   * @param filters Optional filters like author, title, or registration_number
+   * @returns List of copyright search results
+   */
+  async getAllCopyrights(filters: { author?: string; title?: string; registration_number?: string }) {
+    try {
+      const whereClause = {};
+      
+      // Apply filters to the query if provided
+      if (filters.author) {
+        whereClause['author'] = { [Op.iLike]: `%${filters.author}%` };
+      }
+      if (filters.title) {
+        whereClause['title'] = { [Op.iLike]: `%${filters.title}%` };
+      }
+      if (filters.registration_number) {
+        whereClause['registration_number'] = { [Op.eq]: filters.registration_number };
+      }
+      
+      const copyrights = await CopyrightSearch.findAll({
+        where: whereClause,
+      });
+      
+      return copyrights;
+    } catch (error) {
+      console.error('Error fetching copyrights:', error);
+      throw new Error('Could not fetch copyrights');
     }
+  }
 
-    async registerCopyright(data: Copyright): Promise<Copyright> {
-        this.validateCopyrightData(data);
-        return await this.copyrightRepository.create(data);
-    }
+  /**
+   * Search for copyrights based on given parameters.
+   * @param params - Parameters for searching copyrights.
+   * @returns A promise containing the response data.
+   */
+  async searchCopyright(params: CopyrightSearchParams) {
+    try {
+      const { query, page = 1, limit = 10 } = params;
 
-    async getCopyrightDetails(copyrightId: string): Promise<Copyright> {
-        const copyright = await this.copyrightRepository.findById(copyrightId);
-        if (!copyright) throw new Error("Copyright not found.");
-        return copyright;
-    }
+      const copyrights = await CopyrightSearch.findAll({
+        where: {
+          title: { [Op.iLike]: `%${query}%` } // Assuming search is based on title
+        },
+        limit,
+        offset: (page - 1) * limit,
+      });
 
-    async updateCopyright(copyrightId: string, data: Partial<Copyright>): Promise<Copyright> {
-        const copyright = await this.getCopyrightDetails(copyrightId);
-        const updatedCopyright = { ...copyright, ...data };
-        return await this.copyrightRepository.update(copyrightId, updatedCopyright);
+      return {
+        success: true,
+        data: copyrights,
+      };
+    } catch (error) {
+      console.error('Error searching copyrights:', error);
+      return {
+        success: false,
+        error: 'Failed to search copyrights',
+      };
     }
+  }
 
-    async deleteCopyright(copyrightId: string): Promise<void> {
-        const success = await this.copyrightRepository.delete(copyrightId);
-        if (!success) throw new Error("Failed to delete copyright.");
+  /**
+   * Get a single copyright record by ID
+   * @param id The ID of the copyright record
+   * @returns The copyright record if found, or null
+   */
+  async getCopyrightById(id: number) {
+    try {
+      const copyright = await CopyrightSearch.findByPk(id);
+      return copyright;
+    } catch (error) {
+      console.error('Error fetching copyright by ID:', error);
+      throw new Error('Could not fetch copyright by ID');
     }
+  }
 
-    async listAllCopyrights(userId: string): Promise<Copyright[]> {
-        return await this.copyrightRepository.findByUserId(userId);
-    }
+  /**
+   * Create a new copyright record
+   * @param data The data for the new copyright record
+   * @returns The created copyright record
+   */
+  async createCopyright(data: {
+    title: string;
+    author: string;
+    registration_number: string;
+    registration_date: Date;
+    status: string;
+    country: string;
+  }) {
+    try {
+      const newCopyright = await CopyrightSearch.create({
+        title: data.title,
+        author: data.author,
+        registration_number: data.registration_number,
+        registration_date: data.registration_date,
+        status: data.status,
+        country: data.country,
+      });
 
-    private validateCopyrightData(data: Copyright): void {
-        if (!data.title || typeof data.title !== 'string') {
-            throw new Error("Title is required and must be a string.");
-        }
-        if (!data.owner || typeof data.owner !== 'string') {
-            throw new Error("Owner is required and must be a string.");
-        }
-        if (data.creationDate && !(data.creationDate instanceof Date)) {
-            throw new Error("Creation date must be a valid date.");
-        }
-        // Add more validation rules as needed
+      return newCopyright;
+    } catch (error) {
+      console.error('Error creating copyright:', error);
+      throw new Error('Could not create copyright');
     }
+  }
+
+  /**
+   * Register a new copyright in the system.
+   * @param data - The data for the copyright registration.
+   * @returns A promise containing the response data.
+   */
+  async registerCopyright(data: CopyrightRegistration) {
+    try {
+      const newCopyright = await CopyrightSearch.create({
+        title: data.title,
+        author: data.author,
+        registration_number: data.registration_number,
+        registration_date: data.registration_date,
+        status: data.status ?? '',
+        country: data.country ?? '',
+      });
+
+      return {
+        success: true,
+        data: newCopyright,
+      };
+    } catch (error) {
+      console.error('Error registering copyright:', error);
+      return {
+        success: false,
+        error: 'Failed to register copyright',
+      };
+    }
+  }
+
+  /**
+   * Update an existing copyright record
+   * @param id The ID of the copyright record
+   * @param data The updated data for the copyright record
+   * @returns The updated copyright record if found, or null
+   */
+  async updateCopyright(id: number, data: Partial<{
+    title: string;
+    author: string;
+    registration_number: string;
+    registration_date: Date;
+    status: string;
+    country: string;
+  }>) {
+    try {
+      const copyright = await CopyrightSearch.findByPk(id);
+      if (!copyright) {
+        throw new Error('Copyright not found');
+      }
+
+      // Update the copyright record with new data
+      await copyright.update(data);
+      
+      return copyright;
+    } catch (error) {
+      console.error('Error updating copyright:', error);
+      throw new Error('Could not update copyright');
+    }
+  }
+
+  /**
+   * Delete a copyright record by ID
+   * @param id The ID of the copyright record
+   * @returns A boolean indicating success or failure
+   */
+  async deleteCopyright(id: number) {
+    try {
+      const result = await CopyrightSearch.destroy({
+        where: { id },
+      });
+
+      return result > 0; // true if deletion was successful, false otherwise
+    } catch (error) {
+      console.error('Error deleting copyright:', error);
+      throw new Error('Could not delete copyright');
+    }
+  }
 }
 
-// Example of dependency injection
-const copyrightRepository = new CopyrightRepository();
-export const copyrightService = new CopyrightService(copyrightRepository);
+export default new CopyrightService();

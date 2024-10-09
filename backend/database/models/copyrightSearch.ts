@@ -1,7 +1,7 @@
 import { DataTypes, Model, Optional } from 'sequelize';
 import sequelize from '../config'; // 
 
-// interface representing the attributes of the CopyrightSearch model
+// Interface representing the attributes of the CopyrightSearch model
 interface CopyrightSearchAttributes {
   id: number;
   title: string;
@@ -14,7 +14,7 @@ interface CopyrightSearchAttributes {
   updated_at?: Date;
 }
 
-// creation attributes interface (id is optional)
+// Creation attributes interface (id is optional)
 interface CopyrightSearchCreationAttributes extends Optional<CopyrightSearchAttributes, 'id'> {}
 
 // CopyrightSearch model class extending Sequelize's Model

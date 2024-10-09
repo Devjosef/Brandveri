@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { copyrightService } from '../services/copyrightService';
-import { ApiResponse, CopyrightSearchParams } from '@types';
+import CopyrightService from '../services/copyrightService';
+import { ApiResponse, CopyrightSearchParams, Copyright, CopyrightRegistration } from '../../../types/copyright';
 
 /**
  * CopyrightController class handles copyright-related requests.
@@ -11,7 +11,7 @@ class CopyrightController {
      * @param req - Express request object.
      * @param res - Express response object.
      */
-    public async search(req: Request, res: Response<ApiResponse<any>>): Promise<void> {
+    public async search(req: Request, res: Response<ApiResponse<Copyright[]>>): Promise<void> {
         const { query, page, limit } = req.query;
 
         // Construct search parameters
@@ -23,7 +23,7 @@ class CopyrightController {
 
         try {
             // Call the CopyrightService to search copyrights
-            const response = await copyrightService.searchCopyright(params);
+            const response = await CopyrightService.searchCopyright(params);
 
             // Return the response with appropriate status code
             res.status(response.success ? 200 : 500).json(response);
@@ -36,51 +36,95 @@ class CopyrightController {
         }
     }
 
-    async register(req: Request, res: Response) {
+    async register(req: Request, res: Response<ApiResponse<Copyright>>): Promise<void> {
         try {
-            const copyright = await copyrightService.registerCopyright(req.body);
-            res.status(201).json(copyright);
+            const copyright = await CopyrightService.registerCopyright(req.body as CopyrightRegistration);
+            res.status(201).json({
+                success: true,
+                data: copyright,
+                error: '',
+            });
         } catch (error) {
-            res.status(400).json({ error: error.message });
+            res.status(400).json({
+                success: false,
+                data: null,
+                error: error.message,
+            });
         }
     }
 
-    async get(req: Request, res: Response) {
+    async get(req: Request, res: Response<ApiResponse<Copyright>>): Promise<void> {
         try {
-            const copyright = await copyrightService.getCopyrightById(req.params.id);
+            const copyright = await CopyrightService.getCopyrightById(req.params.id);
             if (copyright) {
-                res.status(200).json(copyright);
+                res.status(200).json({
+                    success: true,
+                    data: copyright,
+                    error: '',
+                });
             } else {
-                res.status(404).json({ error: 'Copyright not found' });
+                res.status(404).json({
+                    success: false,
+                    data: null,
+                    error: 'Copyright not found',
+                });
             }
         } catch (error) {
-            res.status(500).json({ error: error.message });
+            res.status(500).json({
+                success: false,
+                data: null,
+                error: error.message,
+            });
         }
     }
 
-    async update(req: Request, res: Response) {
+    async update(req: Request, res: Response<ApiResponse<Copyright>>): Promise<void> {
         try {
-            const updatedCopyright = await copyrightService.updateCopyright(req.params.id, req.body);
+            const updatedCopyright = await CopyrightService.updateCopyright(req.params.id, req.body);
             if (updatedCopyright) {
-                res.status(200).json(updatedCopyright);
+                res.status(200).json({
+                    success: true,
+                    data: updatedCopyright,
+                    error: '',
+                });
             } else {
-                res.status(404).json({ error: 'Copyright not found' });
+                res.status(404).json({
+                    success: false,
+                    data: null,
+                    error: 'Copyright not found',
+                });
             }
         } catch (error) {
-            res.status(500).json({ error: error.message });
+            res.status(500).json({
+                success: false,
+                data: null,
+                error: error.message,
+            });
         }
     }
 
-    async delete(req: Request, res: Response) {
+    async delete(req: Request, res: Response<ApiResponse<null>>): Promise<void> {
         try {
-            const success = await copyrightService.deleteCopyright(req.params.id);
+            const success = await CopyrightService.deleteCopyright(req.params.id);
             if (success) {
-                res.status(204).send();
+                res.status(204).json({
+                    success: true,
+                    data: null,
+                    error: '',
+                });
             } else {
-                res.status(404).json({ error: 'Copyright not found' });
+                res.status(404).json({
+                    success: false,
+                    data: null,
+                    error: 'Copyright not found',
+                });
             }
         } catch (error) {
-            res.status(500).json({ error: error.message });
+            res.status(500).json({
+                success: false,
+                data: null,
+                error: error.message,
+            });
         }
     }
 }

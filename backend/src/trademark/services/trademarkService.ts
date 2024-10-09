@@ -43,7 +43,7 @@ class TrademarkService {
             this.validateTrademarkData(data);
 
             // Create a new Trademark record
-            const trademark = await TrademarkSearch.create(data);
+            const trademark = await TrademarkSearch.create(data as any);
 
             return {
                 success: true,
