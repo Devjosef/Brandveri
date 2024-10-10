@@ -1,6 +1,6 @@
 import express, { Request, Response } from 'express';
-import { copyrightService } from '../services/copyrightService';
-import { CopyrightSearchParams, ApiResponse } from '../../../types/copyright';
+import copyrightService from '../services/copyrightService';
+import { CopyrightSearchParams, ApiResponse, CopyrightRegistration } from '../../../types/copyright';
 
 const router = express.Router();
 
@@ -8,7 +8,7 @@ const router = express.Router();
  * Middleware to set API keys from environment variables.
  */
 router.use((req, res, next) => {
-    // Set the EUIPO and USPTO API keys from environment variables
+    
     req.app.locals.euipoApiKey = process.env.EUIPO_API_KEY;
     req.app.locals.usptoApiKey = process.env.USPTO_API_KEY;
     next();
@@ -53,7 +53,7 @@ router.get('/search', async (req: Request, res: Response<ApiResponse<any>>) => {
  */
 router.post('/register', async (req: Request, res: Response<ApiResponse<any>>) => {
     try {
-        const data = req.body;
+        const data: CopyrightRegistration = req.body;
 
         // Call the CopyrightService to register a copyright
         const response = await copyrightService.registerCopyright(data);
