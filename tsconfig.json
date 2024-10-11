@@ -1,0 +1,55 @@
+{
+    "compilerOptions": {
+      /* Basic Options */
+      "target": "ES2019",                           // Latest ECMAScript version widely supported by modern environments
+      "module": "CommonJS",                         // Node.js uses CommonJS, but change this to "ESNext" if using ES modules in Node
+      "lib": ["ES2019"],                            // Use modern JavaScript features, like `async` and `Promise`
+      "allowJs": false,                             // Only allow TypeScript files to avoid mixing JS with TS
+      "checkJs": false,                             // We do not need to check JS files
+      "outDir": "./dist",                           // Output folder for compiled JavaScript files
+      "rootDir": "./backend/src",                           // Root folder for TypeScript source files
+      "strict": true,                               // Enable all strict type-checking options
+      "noImplicitAny": true,                        // Disallow the use of `any` type unless explicitly defined
+      "strictNullChecks": true,                     // Ensure values can’t be null unless explicitly allowed
+      "strictFunctionTypes": true,                  // Ensure function types are checked correctly
+      "strictBindCallApply": true,                  // Ensure `bind`, `call`, and `apply` methods are properly typed
+      "noImplicitThis": true,                       // Disallow `this` being used implicitly
+      "alwaysStrict": true,                         // Emit "use strict" directive in JavaScript files
+
+
+    
+  
+      /* Module Resolution Options */
+      "moduleResolution": "node",                   // Use Node.js module resolution strategy
+      "esModuleInterop": true,                      // Enables interop between CommonJS and ES6 modules
+      "forceConsistentCasingInFileNames": true,     // Disallow differently-cased imports referring to the same file
+      "resolveJsonModule": true,                    // Allow importing .json files
+  
+      /* Source Map Options */
+      "sourceMap": true,                            // Generate source maps for debugging in development
+      "inlineSources": true,                        // Embed sources into the source maps for debugging
+  
+      /* Output Options */
+      "declaration": true,                          // Generate .d.ts files alongside the compiled JavaScript
+      "declarationMap": true,                       // Create map files for the declaration files
+      "removeComments": true,                       // Remove comments from output
+      "noEmitOnError": true,                        // Do not emit JavaScript files if there are any TypeScript errors
+  
+      /* Type Checking */
+      "skipLibCheck": true,                         // Skip type checking of all declaration files (.d.ts) for faster builds
+      "isolatedModules": true,                      // Enforces each file as an isolated module
+  
+      /* Code Quality */
+      "noUnusedLocals": true,                       // Report errors on unused local variables
+      "noUnusedParameters": true,                   // Report errors on unused function parameters
+      "noImplicitReturns": true,                    // Ensure all code paths in a function return a value
+      "noFallthroughCasesInSwitch": true,           // Report errors for fallthrough cases in switch statements
+  
+      /* Experimental Options */
+      "experimentalDecorators": true,               // Enable decorators, if you plan to use them (useful with TypeORM or NestJS)
+      "emitDecoratorMetadata": true                 // Emit type metadata when decorators are used
+    },
+    "include": ["backend/src/**/*.ts"],
+    "exclude": ["node_modules", "dist"]
+  }
+  

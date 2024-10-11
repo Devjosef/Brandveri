@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
-import RecommendationService from '../services/recommendationService';
+import { recommendationService } from '../services/recommendationService';
 import { RecommendationRequest } from '../types/recommendationEngine';
+import { validateRecommendationInput } from '../utils/helperFunctions';
 
 /**
  * RecommendationController class handles recommendation-related requests.
@@ -13,12 +14,29 @@ class RecommendationController {
      */
     public async getRecommendations(req: Request, res: Response): Promise<void> {
         try {
-            const request: RecommendationRequest = req.body;
-            const response = await RecommendationService.getRecommendations(request);
-            res.status(200).json(response);
+            // Validate input before passing to the service layer
+            const { industry, keywords } = req.body as RecommendationRequest;
+            if (!validateRecommendationInput(industry, keywords)) {
+                res.status(400).json({ error: 'Invalid input. Ensure industry and keywords are correctly provided.' });
+                return;
+            }
+
+            // Call the service to get recommendations
+            const response = await recommendationService.getRecommendations({ industry, keywords });
+            res.status(200).json({
+                success: true,
+                data: response,
+                message: 'Recommendations fetched successfully.',
+            });
         } catch (error: any) {
-            console.error('Error in RecommendationController.getRecommendations:', error);
-            res.status(500).json({ error: 'An error occurred while fetching recommendations.' });
+            console.error('Error in RecommendationController.getRecommendations:', error.message || error);
+
+            // Differentiating between different errors for more informative responses
+            if (error.name === 'ValidationError') {
+                res.status(400).json({ error: error.message });
+            } else {
+                res.status(500).json({ error: 'An internal server error occurred while fetching recommendations.' });
+            }
         }
     }
 }

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { escape } from 'validator';
 
 /**
  * Validate user input for recommendation engine.
@@ -12,7 +13,7 @@ export const validateRecommendationInput = (
 ): boolean => {
     // Ensure the industry is a non-empty string
     if (!industry || typeof industry !== 'string' || industry.trim().length === 0) {
-        console.error('Invalid input: Industry must be a non-empty string.');
+        console.error({ message: 'Invalid input: Industry must be a non-empty string.', industry });
         return false;
     }
 
@@ -24,7 +25,7 @@ export const validateRecommendationInput = (
 
     for (const keyword of keywords) {
         if (typeof keyword !== 'string' || keyword.trim().length === 0) {
-            console.error('Invalid input: Each keyword must be a non-empty string.');
+            console.error('Invalid input: Each keyword must be a non-empty string.', { keyword });
             return false; // Invalid keyword found
         }
     }
@@ -37,19 +38,20 @@ export const validateRecommendationInput = (
  * @param input - The input string to be sanitized.
  * @returns Sanitized input.
  */
-const sanitizeInput = (input: string): string => {
-    // Replace special characters and escape any harmful content
-    return input.replace(/[^\w\s]/gi, '').trim();
+export const sanitizeInput = (input: string): string => {
+    return escape(input.trim()); // Escapes potentially harmful HTML characters
 };
 
 /**
  * Check that all necessary environment variables are set before the application runs.
  */
 export const checkEnvironmentVariables = (): void => {
-    if (!process.env.OPENAI_API_KEY) {
-        throw new Error('Missing OpenAI API key. Please set the OPENAI_API_KEY environment variable.');
-    }
-    // Add checks for any other required environment variables here if needed
+    const requiredVariables = ['OPENAI_API_KEY', 'ANOTHER_API_KEY'];
+    requiredVariables.forEach((variable) => {
+        if (!process.env[variable]) {
+            throw new Error(`Missing required environment variable: ${variable}`);
+        }
+    });
 };
 
 /**
@@ -75,18 +77,16 @@ export const formatInputForAI = (industry: string, keywords: string[]): string =
  * @returns A list of recommended brand names.
  */
 export const getBrandRecommendations = async (prompt: string): Promise<string[]> => {
+    const apiKey = process.env.OPENAI_API_KEY;
+    
     try {
-        // Ensure the API key is available (we already checked this during startup)
-        const apiKey = process.env.OPENAI_API_KEY;
-
         const response = await axios.post(
             'https://api.openai.com/v1/completions',
             {
-                model: 'text-davinci-003', // Use OpenAI's model
-                prompt: prompt,
+                model: 'text-davinci-003',
+                prompt,
                 max_tokens: 100,
                 n: 5, // Number of suggestions
-                stop: null,
                 temperature: 0.7, // Controls creativity of response
             },
             {
@@ -94,11 +94,12 @@ export const getBrandRecommendations = async (prompt: string): Promise<string[]>
                     'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json',
                 },
+                timeout: 5000, // Timeout after 5 seconds
             }
         );
 
         // Validate response structure before accessing data
-        if (!response.data || !response.data.choices || !Array.isArray(response.data.choices)) {
+        if (!response.data || !Array.isArray(response.data.choices)) {
             throw new Error('Unexpected response format from OpenAI API.');
         }
 
@@ -111,7 +112,7 @@ export const getBrandRecommendations = async (prompt: string): Promise<string[]>
     } catch (error: any) {
         if (axios.isAxiosError(error)) {
             // Log specific network or API errors
-            console.error('Network or API error:', error.message);
+            console.error('API error occurred:', error.message); // Mask sensitive info
         } else if (error.response) {
             // Log the API response error (without sensitive info)
             console.error('API response error:', error.response.data);
@@ -120,7 +121,6 @@ export const getBrandRecommendations = async (prompt: string): Promise<string[]>
             console.error('Unexpected error:', error.message);
         }
 
-        // Throw a generic error message (sensitive data is masked)
         throw new Error('Failed to fetch brand name recommendations. Please try again later.');
     }
 };
