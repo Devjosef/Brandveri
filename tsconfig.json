@@ -7,7 +7,7 @@
       "allowJs": false,                             // Only allow TypeScript files to avoid mixing JS with TS
       "checkJs": false,                             // We do not need to check JS files
       "outDir": "./dist",                           // Output folder for compiled JavaScript files
-      "rootDir": "./backend/src",                           // Root folder for TypeScript source files
+      "rootDir": "./backend",                           // Root folder for TypeScript source files
       "strict": true,                               // Enable all strict type-checking options
       "noImplicitAny": true,                        // Disallow the use of `any` type unless explicitly defined
       "strictNullChecks": true,                     // Ensure values can’t be null unless explicitly allowed

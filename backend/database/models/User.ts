@@ -1,6 +1,8 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import bcrypt from 'bcrypt';
+import Payment from './Payment';
+import Subscription from './Subscription';
 
 class User extends Model {
   public id!: number;
@@ -48,5 +50,12 @@ User.init(
     tableName: 'users',
   }
 );
+
+// Define associations
+User.hasMany(Payment, { foreignKey: 'userId', as: 'payments' });
+User.hasMany(Subscription, { foreignKey: 'userId', as: 'subscriptions' });
+
+Payment.belongsTo(User, { foreignKey: 'userId' });
+Subscription.belongsTo(User, { foreignKey: 'userId' });
 
 export default User;
