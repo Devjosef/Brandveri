@@ -35,3 +35,8 @@ export const cancelSubscription = async (subscriptionId: string): Promise<Stripe
     const subscription = await stripe.subscriptions.cancel(subscriptionId);
     return subscription;
 };
+
+export function handleStripeError(error: any, message: string): never {
+    console.error(`${message}:`, error);
+    throw new Error(`${message}. Please try again later.`);
+  }
