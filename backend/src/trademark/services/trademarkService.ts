@@ -1,6 +1,7 @@
-import TrademarkSearch  from '../../../database/models/trademarkSearch'; 
-import { ApiResponse, TrademarkSearchParams, TrademarkRegistration, Trademark } from '../../../types/trademark';
-import { Op, ValidationError } from 'sequelize'; 
+import TrademarkSearch from '../../../database/models/trademarkSearch';
+import { ApiResponse, TrademarkSearchParams, TrademarkRegistration } from '../../../types/trademark';
+import { Op, ValidationError } from 'sequelize';
+import { getCache, setCache } from '../../utils/cache'; // Import cache functions
 
 class TrademarkService {
     /**
@@ -11,13 +12,26 @@ class TrademarkService {
     async searchTrademark(params: TrademarkSearchParams): Promise<ApiResponse<TrademarkSearch[]>> {
         try {
             const { query, page = 1, limit = 10 } = params;
+            const cacheKey = `trademark:search:${query}:${page}:${limit}`;
+
+            // Check cache first
+            const cachedData = await getCache(cacheKey);
+            if (cachedData) {
+                return {
+                    success: true,
+                    data: cachedData,
+                };
+            }
 
             // Perform a search on the Trademark model
             const trademarks = await TrademarkSearch.findAll({
-                where: { name: { [Op.iLike]: `%${query}%` } }, // Case-insensitive search
+                where: { name: { [Op.iLike]: `%${query}%` } },
                 limit,
                 offset: (page - 1) * limit,
             });
+
+            // Set cache with fetched data
+            await setCache(cacheKey, trademarks);
 
             return {
                 success: true,

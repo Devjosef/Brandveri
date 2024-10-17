@@ -1,6 +1,7 @@
 import CopyrightSearch from '../../../database/models/copyrightSearch';
 import { Op } from 'sequelize';
 import { CopyrightSearchParams, CopyrightRegistration } from '../../../types/copyright';
+import { getCache, setCache } from '../../utils/cache'; // Import cache functions
 
 class CopyrightService {
   
@@ -11,7 +12,7 @@ class CopyrightService {
    */
   async getAllCopyrights(filters: { author?: string; title?: string; registration_number?: string }) {
     try {
-      const whereClause = {};
+      const whereClause: Record<string, any> = {}; // Define the type of whereClause
       
       // Apply filters to the query if provided
       if (filters.author) {
@@ -43,14 +44,27 @@ class CopyrightService {
   async searchCopyright(params: CopyrightSearchParams) {
     try {
       const { query, page = 1, limit = 10 } = params;
+      const cacheKey = `copyright:search:${query}:${page}:${limit}`;
+
+      // Check cache first
+      const cachedData = await getCache(cacheKey);
+      if (cachedData) {
+        return {
+          success: true,
+          data: cachedData,
+        };
+      }
 
       const copyrights = await CopyrightSearch.findAll({
         where: {
-          title: { [Op.iLike]: `%${query}%` } // Assuming search is based on title
+          title: { [Op.iLike]: `%${query}%` }
         },
         limit,
         offset: (page - 1) * limit,
       });
+
+      // Set cache with fetched data
+      await setCache(cacheKey, copyrights);
 
       return {
         success: true,
@@ -159,7 +173,6 @@ class CopyrightService {
         throw new Error('Copyright not found');
       }
 
-      // Update the copyright record with new data
       await copyright.update(data);
       
       return copyright;

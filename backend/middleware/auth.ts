@@ -1,5 +1,18 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
+import session from 'express-session';
+import connectRedis from 'connect-redis';
+import redisClient from '../cache/redis'; 
+
+const RedisStore = new connectRedis(session);
+
+export const sessionMiddleware = session({
+  store: new RedisStore({ client: redisClient }),
+  secret: process.env.SESSION_SECRET || 'your_secret_key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false, httpOnly: true, maxAge: 3600000 } // Adjust as needed
+});
 
 export function authenticateToken(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers['authorization'];
@@ -19,4 +32,5 @@ export function authenticateToken(req: Request, res: Response, next: NextFunctio
     req.user = user;
     next();
   });
+}
 }

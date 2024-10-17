@@ -1,12 +1,12 @@
-import { Recommendation, RecommendationRequest, RecommendationResponse, UserPreference } from '../types/recommendationEngine';
-import { getUserPreferences } from '../../../types/UserPreference';
+import { Recommendation, RecommendationRequest, RecommendationResponse, RecommendationType, UserPreference } from '../../../types/recommendationEngine';
+import { getCache, setCache } from '../../utils/cache'; // Import cache functions
 
 // Ideally, you might fetch these from a database or API instead of hardcoding.
 class RecommendationService {
     // Move this into a data access layer in the future
     private static recommendations: Recommendation[] = [
-        { id: 1, type: 'Brand Name', name: 'BrandA', description: 'A unique brand name.' },
-        { id: 2, type: 'Brand Name', name: 'BrandB', description: 'Another unique brand name.' },
+        { id: 1, type: RecommendationType.BRAND, name: 'BrandA', description: 'A unique brand name.' },
+        { id: 2, type: RecommendationType.BRAND, name: 'BrandB', description: 'Another unique brand name.' },
         // Add more predefined recommendations for testing
     ];
 
@@ -17,19 +17,28 @@ class RecommendationService {
      */
     public async getRecommendations(request: RecommendationRequest): Promise<RecommendationResponse> {
         try {
-            // Fetch user preferences
-            const userPreferences = await getUserPreferences(request.userId);
+            const cacheKey = `recommendations:${request.userId}`;
 
-            // If no preferences are found, return a default response instead of throwing an error
-            if (!userPreferences) {
-                console.warn(`User preferences not found for userId: ${request.userId}`);
-                return { recommendations: this.getDefaultRecommendations() };
+            // Check cache first
+            const cachedData = await getCache(cacheKey);
+            if (cachedData) {
+                return { recommendations: cachedData };
             }
 
-            // Filter recommendations based on user preferences
+            const userPreferences = await getUserPreferences(request.userId);
+
+            if (!userPreferences) {
+                console.warn(`User preferences not found for userId: ${request.userId}`);
+                const defaultRecommendations = this.getDefaultRecommendations();
+                await setCache(cacheKey, defaultRecommendations); // Cache default recommendations
+                return { recommendations: defaultRecommendations };
+            }
+
             const filteredRecommendations = this.filterRecommendations(userPreferences);
 
-            // Return the filtered recommendations in the response format
+            // Cache the filtered recommendations
+            await setCache(cacheKey, filteredRecommendations);
+
             return { recommendations: filteredRecommendations };
         } catch (error) {
             console.error('Error in RecommendationService.getRecommendations:', error);
@@ -45,7 +54,7 @@ class RecommendationService {
     private filterRecommendations(userPreferences: UserPreference): Recommendation[] {
         // A more efficient way could involve scoring based on how well recommendations match preferences
         return RecommendationService.recommendations.filter(rec =>
-            userPreferences.interests.some(interest => rec.name.toLowerCase().includes(interest.toLowerCase()))
+            userPreferences.interests.some((interest: string) => rec.name.toLowerCase().includes(interest.toLowerCase()))
         );
     }
 
@@ -60,4 +69,3 @@ class RecommendationService {
 
 // Export the service instance
 export const recommendationService = new RecommendationService();
-

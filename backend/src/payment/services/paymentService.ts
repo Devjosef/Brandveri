@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import { getCache, setCache } from '../../utils/cache'; // Import cache functions
 
 class PaymentService {
   private stripe: Stripe;
@@ -26,12 +27,23 @@ class PaymentService {
   }
 
   public async createPaymentIntent(amount: number, currency: string) {
+    const cacheKey = `paymentIntent:${amount}:${currency}`;
     try {
+      // Check cache first
+      const cachedIntent = await getCache(cacheKey);
+      if (cachedIntent) {
+        return cachedIntent;
+      }
+
       const paymentIntent = await this.stripe.paymentIntents.create({
         amount,
         currency,
         payment_method_types: ['card'],
       });
+
+      // Cache the payment intent
+      await setCache(cacheKey, paymentIntent);
+
       return paymentIntent;
     } catch (error) {
       console.error('Payment intent creation error:', error);
@@ -53,11 +65,22 @@ class PaymentService {
   }
 
   public async createSubscription(customerId: string, priceId: string) {
+    const cacheKey = `subscription:${customerId}:${priceId}`;
     try {
+      // Check cache first
+      const cachedSubscription = await getCache(cacheKey);
+      if (cachedSubscription) {
+        return cachedSubscription;
+      }
+
       const subscription = await this.stripe.subscriptions.create({
         customer: customerId,
         items: [{ price: priceId }],
       });
+
+      // Cache the subscription
+      await setCache(cacheKey, subscription);
+
       return subscription;
     } catch (error) {
       console.error('Subscription creation error:', error);
