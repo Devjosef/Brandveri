@@ -49,7 +49,7 @@
       "experimentalDecorators": true,               // Enable decorators, if you plan to use them (useful with TypeORM or NestJS)
       "emitDecoratorMetadata": true                 // Emit type metadata when decorators are used
     },
-    "include": ["backend/src/**/*.ts"],
+    "include": ["backend/**/*.ts"],
     "exclude": ["node_modules", "dist"]
   }
   

@@ -1,36 +1,42 @@
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload, VerifyErrors } from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
-import session from 'express-session';
-import connectRedis from 'connect-redis';
-import redisClient from '../cache/redis'; 
 
-const RedisStore = new connectRedis(session);
+// Interface for authenticated requests
+interface AuthenticatedRequest extends Request {
+  user?: string | JwtPayload; // User can be either a string (if using simple JWT payloads) or JwtPayload
+}
 
-export const sessionMiddleware = session({
-  store: new RedisStore({ client: redisClient }),
-  secret: process.env.SESSION_SECRET || 'your_secret_key',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false, httpOnly: true, maxAge: 3600000 } // Adjust as needed
-});
+// JWT Authentication middleware
+export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction): Response<any> | void {
+  const authHeader = req.headers['authorization']; // Get authorization header
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null; // Extract the token
 
-export function authenticateToken(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
-
+  // If no token is provided, return a 401 Unauthorized response
   if (!token) {
-    return res.status(401).json({ error: 'Access denied' });
+    return res.status(401).json({ error: 'Access denied. No token provided.' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+  // Verify the token
+  jwt.verify(token, process.env.JWT_SECRET as string, (err: VerifyErrors | null, user: JwtPayload | string | undefined) => {
     if (err) {
+      // Handle specific case of token expiration
       if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({ error: 'Token expired, please re-authenticate' });
+        return res.status(401).json({ error: 'Token expired, please re-authenticate.' });
       }
+      // Handle any other token verification errors
       return res.status(403).json({ error: 'Invalid token' });
     }
-    req.user = user;
-    next();
+
+    // If the token is valid and the user is authenticated, attach the user to the request
+    if (user) {
+      req.user = user; // Assign the user to the request
+      return next(); // Call the next middleware function
+    } else {
+      // Return a 403 Forbidden response if the token is invalid
+      return res.status(403).json({ error: 'Invalid token' });
+    }
   });
-}
+
+  // Explicitly return undefined 
+  return;
 }

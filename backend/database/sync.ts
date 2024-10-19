@@ -4,7 +4,7 @@ import TrademarkSearch from './models/trademarkSearch';
 import Invoice from './models/invoice';
 import ApiLog from './models/ApiLog';
 import Session from './models/sessions';
-import UserPreference from './models/userPreference';
+import UserPreference from './models/UserPreference';
 import Notification from './models/notification';
 import AuditLog from './models/AuditLog';
 // Sync all models

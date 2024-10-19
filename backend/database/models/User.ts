@@ -11,8 +11,8 @@ class User extends Model {
   public passwordHash!: string;
   public readonly createdAt!: Date;
 
-  public validatePassword(password: string): boolean {
-    return bcrypt.compareSync(password, this.passwordHash);
+  public async validatePassword(password: string): Promise<boolean> {
+    return await bcrypt.compare(password, this.passwordHash);
   }
 }
 
@@ -37,7 +37,9 @@ User.init(
       type: DataTypes.STRING(255),
       allowNull: false,
       set(value: string) {
-        this.setDataValue('passwordHash', bcrypt.hashSync(value, 10));
+        bcrypt.hash(value, 10).then(hash => {
+          this.setDataValue('passwordHash', hash);
+        });
       },
     },
     createdAt: {
