@@ -1,66 +1,85 @@
 import { Request, Response } from 'express';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
+import jwt, { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
 import { generateToken, generateRefreshToken } from '../utils/tokenUtils';
 import UserModel from '../../database/models/User';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const SALT_ROUNDS = 10;
 const REFRESH_TOKEN_SECRET = process.env.JWT_REFRESH_TOKEN;
-const REFRESH_TOKEN_EXPIRATION = '7d';
 
-// Rate limiting and other protections (like express-rate-limit) can be applied in middleware
+if (!REFRESH_TOKEN_SECRET) {
+    throw new Error('JWT_REFRESH_TOKEN environment variable is not set');
+}
+
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
 
 // Register a new user
-export const register = async (req: Request, res: Response) => {
+export const register = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { username, password } = req.body;
+        const { username, email, password } = req.body;
 
-        const existingUser = await UserModel.findOne({ username });
-        if (existingUser) {
-            return res.status(400).json({ message: 'Username already exists' });
+        if (!username || !email || !password) {
+            res.status(400).json({ message: 'Username, email, and password are required' });
+            return;
         }
 
-        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+        const existingUser = await UserModel.findOne({ where: { username } });
+        if (existingUser) {
+            res.status(400).json({ message: 'Username already exists' });
+            return;
+        }
 
-        const newUser = new UserModel({
+        await UserModel.create({
             username,
-            password: hashedPassword,
+            email,
+            passwordHash: password, // The setter in User.ts will hash this
         });
 
-        await newUser.save();
         res.status(201).json({ message: 'User registered successfully' });
     } catch (err) {
+        console.error('Error during registration:', err);
         res.status(500).json({ message: 'Server error during registration' });
     }
 };
 
 // Login a user and issue access/refresh tokens
-export const login = async (req: Request, res: Response) => {
+export const login = async (req: Request, res: Response): Promise<void> => {
     try {
         const { username, password } = req.body;
 
-        const user = await UserModel.findOne({ username });
+        if (!username || !password) {
+            res.status(400).json({ message: 'Username and password are required' });
+            return;
+        }
+
+        const user = await UserModel.findOne({ where: { username } });
         if (!user) {
-            return res.status(400).json({ message: 'Invalid credentials' });
+            res.status(400).json({ message: 'Invalid credentials' });
+            return;
         }
 
-        const isMatch = await bcrypt.compare(password, user.password);
+        const isMatch = await user.validatePassword(password);
         if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid credentials' });
+            res.status(400).json({ message: 'Invalid credentials' });
+            return;
         }
 
-        const accessToken = generateToken(user);
-        const refreshToken = generateRefreshToken(user);
+        const accessToken = generateToken({
+            id: user.id, // Ensure this matches the expected payload structure
+            username: user.username,
+        });
 
-        // Securely set refresh token in HttpOnly cookie
+        const refreshToken = generateRefreshToken({
+            id: user.id,
+            username: ''
+        });
+
         res.cookie('refreshToken', refreshToken, {
-            httpOnly: true, // Securely store the refresh token
-            secure: process.env.NODE_ENV === 'production', // Only use in production with HTTPS
-            sameSite: 'strict', // Prevent CSRF
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in ms
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'strict',
+            maxAge: COOKIE_MAX_AGE
         });
 
         res.json({
@@ -68,51 +87,55 @@ export const login = async (req: Request, res: Response) => {
             message: 'Login successful',
         });
     } catch (err) {
+        console.error('Error during login:', err);
         res.status(500).json({ message: 'Server error during login' });
     }
 };
 
 // Refresh the access token using a valid refresh token
-export const refreshToken = async (req: Request, res: Response) => {
+export const refreshToken = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { refreshToken } = req.cookies; // Access the refresh token from the secure cookie
+        const { refreshToken } = req.cookies;
 
         if (!refreshToken) {
-            return res.status(400).json({ message: 'Refresh token is required' });
+            res.status(400).json({ message: 'Refresh token is required' });
+            return;
         }
 
-        // Verify refresh token
         const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET) as any;
 
-        // Issue new tokens
         const newAccessToken = generateToken({
-            _id: decoded.id,
+            id: decoded.id, 
             username: decoded.username,
-            role: decoded.role
         });
 
         const newRefreshToken = generateRefreshToken({
-            _id: decoded.id,
-            username: decoded.username
+            id: decoded.id,
+            username: ''
         });
 
-        // Rotate the refresh token
         res.cookie('refreshToken', newRefreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000
+            maxAge: COOKIE_MAX_AGE
         });
 
         res.json({ accessToken: newAccessToken });
     } catch (err) {
-        res.status(403).json({ message: 'Invalid refresh token' });
+        if (err instanceof TokenExpiredError) {
+            res.status(403).json({ message: 'Refresh token expired' });
+        } else if (err instanceof JsonWebTokenError) {
+            res.status(403).json({ message: 'Invalid refresh token' });
+        } else {
+            console.error('Error during token refresh:', err);
+            res.status(500).json({ message: 'Server error during token refresh' });
+        }
     }
 };
 
 // Logout and clear refresh token
-export const logout = async (req: Request, res: Response) => {
-    // Clear the refresh token cookie
+export const logout = async (_: Request, res: Response): Promise<void> => {
     res.clearCookie('refreshToken', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',

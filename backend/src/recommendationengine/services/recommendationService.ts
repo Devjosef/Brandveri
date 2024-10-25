@@ -1,7 +1,7 @@
 import { Recommendation, RecommendationRequest, RecommendationResponse, RecommendationType, UserPreference } from '../../../types/recommendationEngine';
 import { getCache, setCache } from '../../utils/cache'; // Import cache functions
 
-// Ideally, you might fetch these from a database or API instead of hardcoding.
+
 class RecommendationService {
     // Move this into a data access layer in the future
     private static recommendations: Recommendation[] = [
@@ -25,7 +25,7 @@ class RecommendationService {
                 return { recommendations: cachedData };
             }
 
-            const userPreferences = await getUserPreferences(request.userId);
+            const userPreferences: UserPreference | null = await this.getUserPreferences(request.userId);
 
             if (!userPreferences) {
                 console.warn(`User preferences not found for userId: ${request.userId}`);
@@ -44,6 +44,9 @@ class RecommendationService {
             console.error('Error in RecommendationService.getRecommendations:', error);
             throw new Error('Failed to fetch recommendations. Please try again later.');
         }
+    }
+    getUserPreferences(_userId: string): UserPreference | PromiseLike<UserPreference | null> | null {
+        throw new Error('Method not implemented.');
     }
 
     /**

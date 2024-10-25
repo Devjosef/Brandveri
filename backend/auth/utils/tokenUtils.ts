@@ -11,7 +11,7 @@ if (!SECRET_KEY || !REFRESH_SECRET_KEY) {
 }
 
 interface User {
-    _id: string;
+    id: number; 
     username: string;
     role?: string;
 }
@@ -22,7 +22,7 @@ const REFRESH_TOKEN_EXPIRATION = '7d';
 // Generate an access token for a user
 export const generateToken = (user: User) => {
     const payload = {
-        id: user._id,
+        id: user.id,
         username: user.username,
         role: user.role,
     };
@@ -33,7 +33,7 @@ export const generateToken = (user: User) => {
 // Generate a refresh token for a user using a different secret
 export const generateRefreshToken = (user: User) => {
     const payload = {
-        id: user._id,
+        id: user.id,
         username: user.username,
     };
 

@@ -1,7 +1,7 @@
 // Types for authentication
 
 export interface User {
-    id: string;
+    id: number; 
     username: string;
     passwordHash: string; // Store hashed password
     email: string;
@@ -21,12 +21,12 @@ export interface AuthResponse {
 }
 
 export interface TokenPayload {
-    userId: string;
+    id: number; 
     username: string;
     exp: number; // Expiration time
 }
 
 export interface RefreshTokenPayload {
-    userId: string;
+    id: number; 
     exp: number; // Expiration time
 }
