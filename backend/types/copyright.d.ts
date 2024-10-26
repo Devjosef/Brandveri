@@ -25,6 +25,6 @@ export interface CopyrightSearchParams {
 
 export interface ApiResponse<T> {
     success: boolean;
-    data: T;
-    error: string;
+    data?: T;
+    error?: string;
 }

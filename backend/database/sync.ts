@@ -1,13 +1,17 @@
 import sequelize from './config';
 import User from './models/User';
 import TrademarkSearch from './models/trademarkSearch';
-import Invoice from './models/invoice';
+import Invoice from './models/Invoice';
 import ApiLog from './models/ApiLog';
-import Session from './models/sessions';
 import UserPreference from './models/UserPreference';
-import Notification from './models/notification';
+import Notification from './models/Notification';
 import AuditLog from './models/AuditLog';
-// Sync all models
+import Session from './models/sessions';
+import Payment from './models/Payment';
+import Recommendation from './models/recommendation';
+import RecommendationLog from './models/recommendationLogs';
+import Subscription from './models/Subscription';
+
 export const syncDatabase = async () => {
   try {
     await sequelize.sync({ force: false });
@@ -26,5 +30,9 @@ export {
   Session,
   UserPreference,
   Notification,
-  AuditLog
+  AuditLog,
+  Payment,
+  Recommendation,
+  RecommendationLog,
+  Subscription
 };

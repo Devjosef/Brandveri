@@ -1,13 +1,14 @@
 import express, { Request, Response } from 'express';
 import copyrightService from '../services/copyrightService';
-import { CopyrightSearchParams, ApiResponse, CopyrightRegistration } from '../../../types/copyright';
+import { CopyrightSearchParams, ApiResponse, CopyrightRegistration, Copyright } from '../../../types/copyright';
+import rateLimiter from '../../../middleware/ratelimiter'; // Import the rate limiter
 
 const router = express.Router();
 
 /**
  * Middleware to set API keys from environment variables.
  */
-router.use((req, res, next) => {
+router.use((req, _res, next) => {
     
     req.app.locals.euipoApiKey = process.env.EUIPO_API_KEY;
     req.app.locals.usptoApiKey = process.env.USPTO_API_KEY;
@@ -21,7 +22,7 @@ router.use((req, res, next) => {
  * @param page - The page number for pagination.
  * @param limit - The number of results per page.
  */
-router.get('/search', async (req: Request, res: Response<ApiResponse<any>>) => {
+router.get('/search', rateLimiter, async (req: Request, res: Response<ApiResponse<Copyright>>) => {
     const { query, page, limit } = req.query;
 
     try {
@@ -51,7 +52,7 @@ router.get('/search', async (req: Request, res: Response<ApiResponse<any>>) => {
  * @route POST /api/copyright/register
  * @param data - The copyright registration data.
  */
-router.post('/register', async (req: Request, res: Response<ApiResponse<any>>) => {
+router.post('/register', rateLimiter, async (req: Request, res: Response<ApiResponse<any>>) => {
     try {
         const data: CopyrightRegistration = req.body;
 

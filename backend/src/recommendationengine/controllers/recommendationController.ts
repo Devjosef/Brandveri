@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { recommendationService } from '../services/recommendationService';
-import { RecommendationRequest } from '../types/recommendationEngine';
+import { RecommendationRequest } from '../../../types/recommendationEngine'
 import { validateRecommendationInput } from '../utils/helperFunctions';
 
 /**
@@ -22,7 +22,10 @@ class RecommendationController {
             }
 
             // Call the service to get recommendations
-            const response = await recommendationService.getRecommendations({ industry, keywords });
+            const response = await recommendationService.getRecommendations({
+                industry, keywords,
+                userId: ''
+            });
             res.status(200).json({
                 success: true,
                 data: response,

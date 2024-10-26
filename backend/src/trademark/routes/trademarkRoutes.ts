@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { trademarkService } from '../services/trademarkService';
 import { ApiResponse, TrademarkSearchParams } from '../../../types/trademark';
+import rateLimiter from '../../../middleware/ratelimiter';
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ const router = express.Router();
  * @param page - The page number for pagination.
  * @param limit - The number of results per page.
  */
-router.get('/search', async (req: Request, res: Response<ApiResponse<any>>) => {
+router.get('/search', rateLimiter, async (req: Request, res: Response<ApiResponse<any>>) => {
     const { query, page, limit } = req.query;
 
     try {
@@ -39,7 +40,7 @@ router.get('/search', async (req: Request, res: Response<ApiResponse<any>>) => {
 /**
  * Middleware to set API keys from environment variables.
  */
-router.use((req, res, next) => {
+router.use((req, _res, next) => {
     // Set the EUIPO and USPTO API keys from environment variables
     req.app.locals.euipoApiKey = process.env.EUIPO_API_KEY;
     req.app.locals.usptoApiKey = process.env.USPTO_API_KEY;

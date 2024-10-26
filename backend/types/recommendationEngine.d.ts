@@ -23,7 +23,9 @@ export enum RecommendationType {
 // Represents the request for recommendations, containing user ID and preferences
 export interface RecommendationRequest {
     userId: string;
-    preferences: string[]; // More detailed preferences in future iterations
+    industry: string; 
+    keywords: string[]; 
+    preferences?: string[]; // More detailed preferences in future iterations
 }
 
 // The response format for the recommendation engine, returning an array of recommendations
