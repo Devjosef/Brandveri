@@ -41,6 +41,11 @@ UserPreference.init(
   {
     sequelize,
     tableName: 'user_preferences',
+    underscored: true,
+    indexes: [
+      { fields: ['user_id'] },
+      { fields: ['preference_key'] }
+    ]
   }
 );
 

@@ -37,6 +37,12 @@ AuditLog.init(
   {
     sequelize,
     tableName: 'audit_logs',
+    underscored: true,
+    indexes: [
+      { fields: ['user_id'] },
+      { fields: ['timestamp'] },
+      { fields: ['action'] }
+    ]
   }
 );
 

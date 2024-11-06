@@ -42,6 +42,12 @@ TrademarkSearch.init(
   {
     sequelize,
     tableName: 'trademark_searches',
+    underscored: true,
+    indexes: [
+      { fields: ['user_id'] },
+      { fields: ['search_term'] },
+      { fields: ['search_date'] }
+    ]
   }
 );
 

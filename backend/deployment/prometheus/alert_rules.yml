@@ -1,0 +1,80 @@
+groups:
+  - name: recommendation_service_alerts
+    rules:
+      # Memory Usage Alerts
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes > 500000000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High memory usage detected"
+          description: "Process using more than 500MB memory for over 5 minutes"
+
+      # Redis Cache Alerts
+      - alert: RedisCacheDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis cache is down"
+          description: "Redis cache has been down for more than 1 minute"
+
+      # API Response Time Alerts
+      - alert: HighAPILatency
+        expr: http_request_duration_seconds{handler="/api/recommendations"} > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency detected"
+          description: "API endpoints are responding slowly (>2s) for 5 minutes"
+
+      # Brand Name Generation Alert
+      - alert: BrandNameGenerationFailure
+        expr: recommendation_brand_generation_errors_total > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Brand name generation failures detected"
+          description: "Multiple failures in brand name generation process"
+
+      # Trademark Service Alerts
+      - alert: TrademarkServiceDown
+        expr: up{job="trademark-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trademark service instance is down"
+          description: "Trademark service has been down for more than 1 minute"
+
+      - alert: TrademarkServiceHighLatency
+        expr: http_request_duration_seconds{job="trademark-service"} > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency in trademark service"
+          description: "Trademark service endpoints are responding slowly (>2s)"
+
+      # Copyright Service Alerts
+      - alert: CopyrightServiceDown
+        expr: up{job="copyright-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Copyright service instance is down"
+          description: "Copyright service has been down for more than 1 minute"
+
+      - alert: CopyrightServiceHighLatency
+        expr: http_request_duration_seconds{job="copyright-service"} > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency in copyright service"
+          description: "Copyright service endpoints are responding slowly (>2s)"

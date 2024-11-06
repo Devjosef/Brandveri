@@ -1,16 +1,16 @@
 import { Model, DataTypes } from 'sequelize';
 import sequelize from '../config';
 
-
 class Subscription extends Model {
   public id!: number;
-  public userId!: number;
-  public planId!: string;
-  public stripeSubscriptionId!: string;
+  public user_id!: number;
+  public subscription_id!: string;
+  public plan_id!: string;
   public status!: string;
-  public renewalDate!: Date;
-  public readonly createdAt!: Date;
-  public readonly updatedAt!: Date;
+  public start_date!: Date;
+  public end_date!: Date;
+  public created_at!: Date;
+  public updated_at!: Date;
 }
 
 Subscription.init({
@@ -19,7 +19,7 @@ Subscription.init({
     autoIncrement: true,
     primaryKey: true
   },
-  userId: {
+  user_id: {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
@@ -28,11 +28,11 @@ Subscription.init({
     },
     onDelete: 'CASCADE'
   },
-  planId: {
+  subscription_id: {
     type: DataTypes.STRING,
     allowNull: false,
   },
-  stripeSubscriptionId: {
+  plan_id: {
     type: DataTypes.STRING,
     allowNull: false,
   },
@@ -41,14 +41,34 @@ Subscription.init({
     allowNull: false,
     defaultValue: 'pending',
   },
-  renewalDate: {
+  start_date: {
+    type: DataTypes.DATE,
+    allowNull: false,
+  },
+  end_date: {
     type: DataTypes.DATE,
     allowNull: true,
   },
+  created_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW,
+  },
+  updated_at: {
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW,
+  }
 }, {
   sequelize,
-  modelName: 'Subscription',
   tableName: 'subscriptions',
+  timestamps: true,
+  underscored: true,
+  indexes: [
+    { fields: ['user_id'] },
+    { fields: ['subscription_id'] },
+    { fields: ['status'] },
+    { fields: ['start_date'] },
+    { fields: ['end_date'] }
+  ]
 });
 
 export default Subscription;

@@ -1,25 +1,26 @@
 import { DataTypes, Model } from 'sequelize';
-import sequelize from '../config'; // Adjust the path to your actual config file
+import sequelize from '../config';
+import CopyrightSearch from './copyrightSearch';
 
-class RecommendationLog extends Model {
+class CopyrightLog extends Model {
   public id!: number;
-  public recommendationId!: number;
+  public copyrightId!: number;
   public userId!: string;
   public action!: string;
   public timestamp!: Date;
 }
 
-RecommendationLog.init({
+CopyrightLog.init({
   id: {
     type: DataTypes.INTEGER,
     autoIncrement: true,
     primaryKey: true,
   },
-  recommendationId: {
+  copyrightId: {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
-      model: 'Recommendations', // Reference Recommendations table
+      model: CopyrightSearch,
       key: 'id'
     }
   },
@@ -35,18 +36,14 @@ RecommendationLog.init({
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW,
   }
-}, 
-{
+}, {
   sequelize,
-  tableName: 'recommendation_logs',
+  tableName: 'copyright_logs',
   timestamps: false,
-  underscored: true,
   indexes: [
-    { fields: ['recommendation_id'] },
-    { fields: ['user_id'] },
-    { fields: ['timestamp'] }
+    { fields: ['copyright_id'] },
+    { fields: ['user_id'] }
   ]
-}
-);
+});
 
-export default RecommendationLog;
+export default CopyrightLog;

@@ -1,33 +1,65 @@
-   auth_enabled: false
+auth_enabled: false
 
-   server:
-     http_listen_port: 3100
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
 
-   ingester:
-     lifecycler:
-       ring:
-         kvstore:
-           store: inmemory
-         replication_factor: 1
+ingester:
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+  chunk_idle_period: 1h
+  max_chunk_age: 1h
+  chunk_retain_period: 30s
 
-   schema_config:
-     configs:
-       - from: 2020-10-24
-         store: boltdb
-         object_store: filesystem
-         schema: v11
-         index:
-           prefix: index_
-           period: 168h
+schema_config:
+  configs:
+    - from: 2024-04-01
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v11
+      index:
+        prefix: index_
+        period: 24h
 
-   storage_config:
-     boltdb:
-       directory: /loki/index
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/boltdb-shipper-active
+    cache_location: /loki/boltdb-shipper-cache
+    cache_ttl: 24h
+    shared_store: filesystem
 
-     filesystem:
-       directory: /loki/chunks
+limits_config:
+  enforce_metric_name: false
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+  max_cache_freshness_per_query: 10m
+  split_queries_by_interval: 15m
 
-   limits_config:
-     enforce_metric_name: false
-     reject_old_samples: true
-     reject_old_samples_max_age: 168h
+# Service-specific configurations
+scrape_configs:
+  - job_name: recommendation_logs
+    static_configs:
+      - targets:
+          - localhost:4005
+          - localhost:4006
+    labels:
+      service: recommendation
+
+  - job_name: trademark_logs
+    static_configs:
+      - targets:
+          - localhost:4001
+          - localhost:4002
+    labels:
+      service: trademark
+
+  - job_name: copyright_logs
+    static_configs:
+      - targets:
+          - localhost:4003
+          - localhost:4004
+    labels:
+      service: copyright

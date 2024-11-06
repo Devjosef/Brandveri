@@ -1,11 +1,32 @@
-   global:
-     scrape_interval: 15s
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s  
+  scrape_timeout: 10s
 
-   scrape_configs:
-     - job_name: 'prometheus'
-       static_configs:
-         - targets: ['localhost:9090']
+rule_files:
+  - "alert_rules.yml"
 
-     - job_name: 'loki'
-       static_configs:
-         - targets: ['loki:3100']
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'alertmanager:9093'
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'recommendation-service'
+    static_configs:
+      - targets: ['backend:3000']
+
+  - job_name: 'trademark-service'
+    static_configs:
+      - targets: ['trademark:4001', 'trademark:4002']
+    metrics_path: '/metrics'
+
+  - job_name: 'copyright-service'
+    static_configs:
+      - targets: ['copyright:4003', 'copyright:4004']
+    metrics_path: '/metrics'

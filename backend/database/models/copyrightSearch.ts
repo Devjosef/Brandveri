@@ -77,10 +77,17 @@ CopyrightSearch.init(
     },
   },
   {
-    sequelize, // Pass the Sequelize instance
-    tableName: 'copyrights', // Table name in PostgreSQL
-    timestamps: true, // Automatically manage createdAt and updatedAt fields
-    underscored: true, // Use snake_case columns in the database
+    sequelize,
+    tableName: 'copyrights',
+    timestamps: true,
+    underscored: true,
+    indexes: [
+      { fields: ['registration_number'] },
+      { fields: ['author'] },
+      { fields: ['title'] },
+      { fields: ['registration_date'] },
+      { fields: ['status'] }
+    ]
   }
 );
 

@@ -41,6 +41,10 @@ Session.init(
   {
     sequelize,
     tableName: 'sessions',
+    indexes: [
+      { fields: ['user_id'] },
+      { fields: ['expires_at'] }
+    ]
   }
 );
 
