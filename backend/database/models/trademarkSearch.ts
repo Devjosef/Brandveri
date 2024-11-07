@@ -1,52 +1,85 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
-import User from './User'; 
-
+import User from './User';
 
 class TrademarkSearch extends Model {
-  public id!: number;
-  public userId!: number;
-  public searchTerm!: string;
-  public searchDate!: Date;
+  public id!: string;
+  public user_id!: string;
+  public search_term!: string;
+  public search_date!: Date;
   public results!: object;
+  public status!: 'pending' | 'completed' | 'failed';
+  public jurisdiction?: string;
+  public search_type?: string;
+  public readonly created_at!: Date;
+  public readonly updated_at!: Date;
 }
 
 TrademarkSearch.init(
   {
     id: {
-      type: DataTypes.INTEGER.UNSIGNED,
-      autoIncrement: true,
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    userId: {
-      type: DataTypes.INTEGER.UNSIGNED,
+    user_id: {
+      type: DataTypes.UUID,
       allowNull: false,
       references: {
         model: User,
         key: 'id',
       },
+      onDelete: 'CASCADE',
     },
-    searchTerm: {
+    search_term: {
       type: DataTypes.STRING(255),
       allowNull: false,
     },
-    searchDate: {
+    search_date: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
     },
     results: {
       type: DataTypes.JSONB,
       allowNull: false,
+      defaultValue: {},
+    },
+    status: {
+      type: DataTypes.ENUM('pending', 'completed', 'failed'),
+      allowNull: false,
+      defaultValue: 'pending',
+    },
+    jurisdiction: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    search_type: {
+      type: DataTypes.STRING(50),
+      allowNull: true,
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+    },
+    updated_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
     },
   },
   {
     sequelize,
     tableName: 'trademark_searches',
     underscored: true,
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
     indexes: [
       { fields: ['user_id'] },
       { fields: ['search_term'] },
-      { fields: ['search_date'] }
+      { fields: ['search_date'] },
+      { fields: ['status'] },
+      { fields: ['jurisdiction'] },
+      { using: 'gin', fields: ['results'] }
     ]
   }
 );

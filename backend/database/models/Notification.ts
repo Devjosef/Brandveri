@@ -3,22 +3,28 @@ import sequelize from '../config';
 import User from './User';
 
 class Notification extends Model {
-  public id!: number;
-  public userId!: number;
+  public id!: string;
+  public user_id!: string;
+  public type!: 'system' | 'trademark' | 'payment' | 'subscription' | 'security';
+  public title!: string;
   public message!: string;
-  public readStatus!: boolean;
-  public readonly createdAt!: Date;
+  public read_status!: boolean;
+  public priority?: number;
+  public metadata?: object;
+  public expires_at?: Date;
+  public readonly created_at!: Date;
+  public readonly updated_at!: Date;
 }
 
 Notification.init(
   {
     id: {
-      type: DataTypes.INTEGER.UNSIGNED,
-      autoIncrement: true,
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
       primaryKey: true,
     },
-    userId: {
-      type: DataTypes.INTEGER.UNSIGNED,
+    user_id: {
+      type: DataTypes.UUID,
       allowNull: false,
       references: {
         model: User,
@@ -26,15 +32,41 @@ Notification.init(
       },
       onDelete: 'CASCADE',
     },
+    type: {
+      type: DataTypes.ENUM('system', 'trademark', 'payment', 'subscription', 'security'),
+      allowNull: false,
+      defaultValue: 'system',
+    },
+    title: {
+      type: DataTypes.STRING(255),
+      allowNull: false,
+    },
     message: {
       type: DataTypes.TEXT,
       allowNull: false,
     },
-    readStatus: {
+    read_status: {
       type: DataTypes.BOOLEAN,
+      allowNull: false,
       defaultValue: false,
     },
-    createdAt: {
+    priority: {
+      type: DataTypes.SMALLINT,
+      defaultValue: 0,
+    },
+    metadata: {
+      type: DataTypes.JSONB,
+      defaultValue: {},
+    },
+    expires_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
+    },
+    updated_at: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
     },
@@ -42,6 +74,19 @@ Notification.init(
   {
     sequelize,
     tableName: 'notifications',
+    underscored: true,
+    timestamps: true,
+    createdAt: 'created_at',
+    updatedAt: 'updated_at',
+    indexes: [
+      { fields: ['user_id'] },
+      { fields: ['type'] },
+      { fields: ['read_status'] },
+      { fields: ['priority'] },
+      { fields: ['created_at'] },
+      { fields: ['expires_at'] },
+      { using: 'gin', fields: ['metadata'] }
+    ]
   }
 );
 

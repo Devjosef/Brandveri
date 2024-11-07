@@ -1,52 +1,78 @@
 import { DataTypes, Model } from 'sequelize';
-import sequelize from '../config'; // Adjust the path to your actual config file
+import sequelize from '../config';
+import Recommendation from './recommendation';
+import User from './User';
 
 class RecommendationLog extends Model {
-  public id!: number;
-  public recommendationId!: number;
-  public userId!: string;
-  public action!: string;
-  public timestamp!: Date;
+  public id!: string;
+  public recommendation_id!: string;
+  public user_id!: string;
+  public action!: 'create' | 'view' | 'update' | 'delete' | 'implement' | 'dismiss';
+  public details?: object;
+  public ip_address?: string;
+  public user_agent?: string;
+  public readonly created_at!: Date;
 }
 
-RecommendationLog.init({
-  id: {
-    type: DataTypes.INTEGER,
-    autoIncrement: true,
-    primaryKey: true,
-  },
-  recommendationId: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: 'Recommendations', // Reference Recommendations table
-      key: 'id'
+RecommendationLog.init(
+  {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
+    recommendation_id: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: Recommendation,
+        key: 'id',
+      },
+      onDelete: 'CASCADE',
+    },
+    user_id: {
+      type: DataTypes.UUID,
+      allowNull: false,
+      references: {
+        model: User,
+        key: 'id',
+      },
+      onDelete: 'CASCADE',
+    },
+    action: {
+      type: DataTypes.ENUM('create', 'view', 'update', 'delete', 'implement', 'dismiss'),
+      allowNull: false,
+    },
+    details: {
+      type: DataTypes.JSONB,
+      defaultValue: {},
+    },
+    ip_address: {
+      type: DataTypes.INET,
+      allowNull: true,
+    },
+    user_agent: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW,
     }
   },
-  userId: {
-    type: DataTypes.UUID,
-    allowNull: false,
-  },
-  action: {
-    type: DataTypes.STRING(50),
-    allowNull: false,
-  },
-  timestamp: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
+  {
+    sequelize,
+    tableName: 'recommendation_logs',
+    underscored: true,
+    timestamps: false,
+    indexes: [
+      { fields: ['recommendation_id'] },
+      { fields: ['user_id'] },
+      { fields: ['action'] },
+      { fields: ['created_at'] },
+      { using: 'gin', fields: ['details'] }
+    ]
   }
-}, 
-{
-  sequelize,
-  tableName: 'recommendation_logs',
-  timestamps: false,
-  underscored: true,
-  indexes: [
-    { fields: ['recommendation_id'] },
-    { fields: ['user_id'] },
-    { fields: ['timestamp'] }
-  ]
-}
 );
 
 export default RecommendationLog;
