@@ -1,6 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
+import { CopyrightMetadata } from '../../types/metadata';
 
 interface CopyrightAttributes {
   id: string;
@@ -14,7 +15,7 @@ interface CopyrightAttributes {
   work_type?: string;
   publication_date?: Date;
   creation_date?: Date;
-  metadata?: object;
+  metadata?: CopyrightMetadata;
   readonly created_at: Date;
   readonly updated_at: Date;
 }
@@ -31,7 +32,7 @@ class Copyright extends Model<CopyrightAttributes> implements CopyrightAttribute
   public work_type?: string;
   public publication_date?: Date;
   public creation_date?: Date;
-  public metadata?: object;
+  public metadata?: CopyrightMetadata;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
 }

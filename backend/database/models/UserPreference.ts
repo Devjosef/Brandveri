@@ -2,7 +2,17 @@ import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
 
-class UserPreference extends Model {
+interface UserPreferenceAttributes {
+  id: string;
+  user_id: string;
+  preference_key: string;
+  preference_value: string;
+  preference_category?: 'theme' | 'notification' | 'privacy' | 'display';
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+
+class UserPreference extends Model<UserPreferenceAttributes> implements UserPreferenceAttributes {
   public id!: string;
   public user_id!: string;
   public preference_key!: string;

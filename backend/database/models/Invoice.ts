@@ -3,7 +3,24 @@ import sequelize from '../config';
 import User from './User';
 import Subscription from './Subscription';
 
-class Invoice extends Model {
+interface InvoiceAttributes {
+  id: string;
+  user_id: string;
+  subscription_id?: string;
+  invoice_number: string;
+  amount: number;
+  currency: string;
+  due_date: Date;
+  status: 'draft' | 'pending' | 'paid' | 'overdue' | 'cancelled' | 'refunded';
+  payment_terms?: string;
+  billing_details?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  notes?: string;
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+
+class Invoice extends Model<InvoiceAttributes> implements InvoiceAttributes {
   public id!: string;
   public user_id!: string;
   public subscription_id?: string;
@@ -13,8 +30,8 @@ class Invoice extends Model {
   public due_date!: Date;
   public status!: 'draft' | 'pending' | 'paid' | 'overdue' | 'cancelled' | 'refunded';
   public payment_terms?: string;
-  public billing_details?: object;
-  public metadata?: object;
+  public billing_details?: Record<string, unknown>;
+  public metadata?: Record<string, unknown>;
   public notes?: string;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;

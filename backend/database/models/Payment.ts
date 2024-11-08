@@ -3,7 +3,23 @@ import sequelize from '../config';
 import User from './User';
 import Subscription from './Subscription';
 
-class Payment extends Model {
+interface PaymentAttributes {
+  id: string;
+  user_id: string;
+  subscription_id?: string;
+  stripe_payment_id: string;
+  amount: number;
+  currency: string;
+  status: 'pending' | 'success' | 'failed' | 'refunded' | 'disputed';
+  payment_method?: string;
+  billing_details?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  refund_reason?: string;
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+
+class Payment extends Model<PaymentAttributes> implements PaymentAttributes {
   public id!: string;
   public user_id!: string;
   public subscription_id?: string;
@@ -12,8 +28,8 @@ class Payment extends Model {
   public currency!: string;
   public status!: 'pending' | 'success' | 'failed' | 'refunded' | 'disputed';
   public payment_method?: string;
-  public billing_details?: object;
-  public metadata?: object;
+  public billing_details?: Record<string, unknown>;
+  public metadata?: Record<string, unknown>;
   public refund_reason?: string;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;

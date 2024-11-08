@@ -3,12 +3,23 @@ import sequelize from '../config';
 import TrademarkSearch from './trademarkSearch';
 import User from './User';
 
-class TrademarkLog extends Model {
+interface TrademarkLogAttributes {
+  id: string;
+  trademark_id: string;
+  user_id: string;
+  action: 'search' | 'view' | 'export' | 'update' | 'delete';
+  details?: Record<string, unknown>;
+  ip_address?: string;
+  user_agent?: string;
+  readonly created_at: Date;
+}
+
+class TrademarkLog extends Model<TrademarkLogAttributes> implements TrademarkLogAttributes {
   public id!: string;
   public trademark_id!: string;
   public user_id!: string;
   public action!: 'search' | 'view' | 'export' | 'update' | 'delete';
-  public details?: object;
+  public details?: Record<string, unknown>;
   public ip_address?: string;
   public user_agent?: string;
   public readonly created_at!: Date;

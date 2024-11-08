@@ -2,7 +2,23 @@ import { Model, DataTypes } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
 
-class Subscription extends Model {
+interface SubscriptionAttributes {
+  id: string;
+  user_id: string;
+  subscription_id: string;
+  plan_id: string;
+  status: 'active' | 'cancelled' | 'pending' | 'expired' | 'suspended';
+  start_date: Date;
+  end_date?: Date;
+  billing_cycle?: string;
+  amount?: number;
+  currency?: string;
+  metadata?: Record<string, unknown>;
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+
+class Subscription extends Model<SubscriptionAttributes> implements SubscriptionAttributes {
   public id!: string;
   public user_id!: string;
   public subscription_id!: string;
@@ -13,7 +29,7 @@ class Subscription extends Model {
   public billing_cycle?: string;
   public amount?: number;
   public currency?: string;
-  public metadata?: object;
+  public metadata?: Record<string, unknown>;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
 }

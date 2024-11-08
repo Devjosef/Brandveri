@@ -1,8 +1,21 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
+import { RecommendationMetadata } from '../../types/metadata';
 
-class Recommendation extends Model {
+interface RecommendationAttributes {
+  id: string;
+  user_id: string;
+  recommendation_type: 'trademark' | 'copyright' | 'patent' | 'general';
+  name: string;
+  description?: string;
+  priority?: number;
+  status?: string;
+  metadata?: RecommendationMetadata;
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+class Recommendation extends Model<RecommendationAttributes> implements RecommendationAttributes {
   public id!: string;
   public user_id!: string;
   public recommendation_type!: 'trademark' | 'copyright' | 'patent' | 'general';
@@ -10,7 +23,7 @@ class Recommendation extends Model {
   public description?: string;
   public priority?: number;
   public status?: string;
-  public metadata?: object;
+  public metadata?: RecommendationMetadata;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
 }

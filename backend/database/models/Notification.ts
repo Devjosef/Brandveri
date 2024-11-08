@@ -2,7 +2,21 @@ import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
 
-class Notification extends Model {
+interface NotificationAttributes {
+  id: string;
+  user_id: string;
+  type: 'system' | 'trademark' | 'payment' | 'subscription' | 'security';
+  title: string;
+  message: string;
+  read_status: boolean;
+  priority?: number;
+  metadata?: Record<string, unknown>;
+  expires_at?: Date;
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+
+class Notification extends Model<NotificationAttributes> implements NotificationAttributes {
   public id!: string;
   public user_id!: string;
   public type!: 'system' | 'trademark' | 'payment' | 'subscription' | 'security';
@@ -10,7 +24,7 @@ class Notification extends Model {
   public message!: string;
   public read_status!: boolean;
   public priority?: number;
-  public metadata?: object;
+  public metadata?: Record<string, unknown>;
   public expires_at?: Date;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;

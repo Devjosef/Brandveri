@@ -1,4 +1,4 @@
-import { DataTypes, Model, UnknownConstraintError, ValidationErrorItem } from 'sequelize';
+import { DataTypes, Model, ValidationErrorItem } from 'sequelize';
 import sequelize from '../config';
 import bcrypt from 'bcrypt';
 import { ValidationError } from 'sequelize';
@@ -21,7 +21,7 @@ class User extends Model {
   public readonly updated_at!: Date;
 
   
-  protected static validatePasswordComplexity(password: string): PasswordValidation {
+  public static validatePasswordComplexity(password: string): PasswordValidation {
     if (password.length < 12) {
       return { isValid: false, message: 'Password must be at least 12 characters long' };
     }
@@ -73,40 +73,39 @@ User.init(
     password_hash: {
       type: DataTypes.STRING(255),
       allowNull: false,
-      set(value: string) {
+      async set(value: string) {
         const validation = User.validatePasswordComplexity(value);
         if (!validation.isValid) {
-          throw new ValidationError(validation.message || 'Invalid password', [
+          throw new ValidationError('Password validation failed', [
             new ValidationErrorItem(
-              validation.message || 'Invalid password',
-              'validation error',
-              'password_hash',
-              value,
-              UnknownConstraintError,
-              'password_complexity',
-              'validate',
-              null
+              validation.message || 'Invalid password',    // message
+              'validation error',                         // type
+              'password_hash',                           // path
+              value,                                     // value
+              this,                                      // instance
+              'password_validation',                     // validatorKey
+              'validatePasswordComplexity',              // fnName
+              ['min', 12, 'special', true, 'numbers', true]  // fnArgs
             )
           ]);
         }
 
-        // Use async/await in a proper way for the setter
+        
         (async () => {
           try {
             const hash = await bcrypt.hash(value, SALT_ROUNDS);
             this.setDataValue('password_hash', hash);
           } catch (error) {
-            console.error('Password hashing error:', error);
-            throw new ValidationError('Error processing password', [
+            throw new ValidationError('Password hashing failed', [
               new ValidationErrorItem(
-                'Error processing password',
-                'Validation error',
-                'password_hash',
-                value,
-                null,
-                'password_hashing',
-                'validate',
-                null
+                'Error processing password',                // message
+                'validation error',                        // type
+                'password_hash',                          // path
+                value,                                    // value
+                this,                                     // instance
+                'password_hashing',                       // validatorKey
+                'bcrypt_hash',                           // fnName
+                [SALT_ROUNDS]                            // fnArgs
               )
             ]);
           }
@@ -134,7 +133,7 @@ User.init(
   {
     sequelize,
     tableName: 'users',
-    modelName: 'User', // model name arg
+    modelName: 'User', // Model name arg
     underscored: true,
     timestamps: true,
     createdAt: 'created_at',

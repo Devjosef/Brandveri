@@ -3,12 +3,23 @@ import sequelize from '../config';
 import Recommendation from './recommendation';
 import User from './User';
 
-class RecommendationLog extends Model {
+interface RecommendationLogAttributes {
+  id: string;
+  recommendation_id: string;
+  user_id: string;
+  action: 'create' | 'view' | 'update' | 'delete' | 'implement' | 'dismiss';
+  details?: Record<string, unknown>;
+  ip_address?: string;
+  user_agent?: string;
+  readonly created_at: Date;
+}
+
+class RecommendationLog extends Model<RecommendationLogAttributes> implements RecommendationLogAttributes {
   public id!: string;
   public recommendation_id!: string;
   public user_id!: string;
   public action!: 'create' | 'view' | 'update' | 'delete' | 'implement' | 'dismiss';
-  public details?: object;
+  public details?: Record<string, unknown>;
   public ip_address?: string;
   public user_agent?: string;
   public readonly created_at!: Date;

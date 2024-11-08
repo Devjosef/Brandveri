@@ -2,12 +2,24 @@ import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
 
-class TrademarkSearch extends Model {
+interface TrademarkSearchAttributes {
+  id: string;
+  user_id: string;
+  search_term: string;
+  search_date: Date;
+  results: Record<string, unknown>;
+  status: 'pending' | 'completed' | 'failed';
+  jurisdiction?: string;
+  search_type?: string;
+  readonly created_at: Date;
+  readonly updated_at: Date;
+}
+class TrademarkSearch extends Model<TrademarkSearchAttributes> implements TrademarkSearchAttributes {
   public id!: string;
   public user_id!: string;
   public search_term!: string;
   public search_date!: Date;
-  public results!: object;
+  public results!: Record<string, unknown>;
   public status!: 'pending' | 'completed' | 'failed';
   public jurisdiction?: string;
   public search_type?: string;

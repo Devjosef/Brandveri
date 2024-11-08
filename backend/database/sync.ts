@@ -1,5 +1,4 @@
 import { Sequelize } from 'sequelize';
-import logger from '../utils/logger';  // Assuming you have a logger utility
 import User from './models/User';
 import TrademarkSearch from './models/trademarkSearch';
 import Invoice from './models/Invoice';
@@ -35,13 +34,29 @@ interface SyncOptions {
   retry?: number;
 }
 
+interface DatabaseError extends Error {
+  code?: string;
+  sqlState?: string;
+  sql?: string;
+}
+
 class DatabaseSync {
   private sequelize: Sequelize;
   private retryAttempts: number = 3;
   private retryDelay: number = 5000;
+  private metrics: {
+    syncAttempts: number;
+    lastSyncTime: number;
+    errors: DatabaseError[];
+  };
 
   constructor(sequelizeInstance: Sequelize) {
     this.sequelize = sequelizeInstance;
+    this.metrics = {
+      syncAttempts: 0,
+      lastSyncTime: 0,
+      errors: []
+    };
   }
 
   private async waitFor(ms: number): Promise<void> {
@@ -51,25 +66,34 @@ class DatabaseSync {
   private async testConnection(): Promise<boolean> {
     try {
       await this.sequelize.authenticate();
-      logger.info('Database connection established successfully');
+      console.debug('[Database] Connection established successfully');
       return true;
     } catch (error) {
-      logger.error('Unable to connect to the database:', error);
+      this.metrics.errors.push(error as DatabaseError);
+      console.error('[Database] Connection test failed:', error);
       return false;
     }
   }
 
   private async syncModel(model: any, options: SyncOptions): Promise<void> {
     const modelName = model.name;
+    const startTime = Date.now();
+  
     try {
       await model.sync(options);
       if (model.options.indexes?.length > 0) {
         await model.sync({ ...options, force: false });
       }
-      logger.info(`Successfully synced model: ${modelName}`);
-    } catch (error) {
-      logger.error(`Error syncing model ${modelName}:`, error);
-      throw new Error(`Failed to sync model ${modelName}: ${error.message}`);
+      
+      const syncTime = Date.now() - startTime;
+      console.debug(`[Database] Synced model ${modelName} in ${syncTime}ms`);
+      
+    } catch (error: unknown) {
+      this.metrics.errors.push(error as DatabaseError);
+      if (error instanceof Error) {
+        throw new Error(`Failed to sync model ${modelName}: ${error.message}`);
+      }
+      throw new Error(`Failed to sync model ${modelName}: Unknown error occurred`);
     }
   }
 
@@ -83,52 +107,61 @@ class DatabaseSync {
 
     let attempts = 0;
     let success = false;
+    const startTime = Date.now();
 
     while (attempts < retry && !success) {
       try {
+        this.metrics.syncAttempts++;
+        
         if (!(await this.testConnection())) {
           throw new Error('Database connection test failed');
         }
 
-        logger.info('Starting database synchronization...');
-        
-        // Begin transaction for atomic updates
+        console.info('[Database] Starting synchronization...');
         const transaction = await this.sequelize.transaction();
 
         try {
-          // Sync all models
           for (const model of models) {
             await this.syncModel(model, { force, alter, logging });
           }
 
-          // Initialize associations
-          this.initializeAssociations();
-
+          await this.initializeAssociations();
           await transaction.commit();
+          
           success = true;
-          logger.info('Database and indexes synced successfully');
+          this.metrics.lastSyncTime = Date.now() - startTime;
+          
+          console.info(`[Database] Sync completed in ${this.metrics.lastSyncTime}ms`);
 
         } catch (error) {
           await transaction.rollback();
           throw error;
         }
 
-      } catch (error) {
+      } catch (error: unknown) {
         attempts++;
-        logger.error(`Database sync attempt ${attempts} failed:`, error);
-
+        this.metrics.errors.push(error as DatabaseError);
+        console.error(`[Database] Sync attempt ${attempts} failed:`, error);
+      
         if (attempts === retry) {
-          logger.error('Max retry attempts reached. Database sync failed.');
-          throw new Error(`Database synchronization failed after ${retry} attempts: ${error.message}`);
+          const errorMessage = error instanceof Error 
+            ? error.message 
+            : 'Unknown error occurred';
+          
+          const finalError = new Error(
+            `Database synchronization failed after ${retry} attempts: ${errorMessage}`
+          );
+          console.error('[Database] Max retry attempts reached:', finalError);
+          throw finalError;
         }
-
-        logger.info(`Retrying in ${this.retryDelay / 1000} seconds...`);
+      
+        console.info(`[Database] Retrying in ${this.retryDelay / 1000}s...`);
         await this.waitFor(this.retryDelay);
       }
     }
   }
 
-  private initializeAssociations(): void {
+  private async initializeAssociations(): Promise<void> {
     try {
       // User associations
       User.hasMany(Payment, { foreignKey: 'user_id', as: 'payments', onDelete: 'CASCADE' });
@@ -139,21 +172,24 @@ class DatabaseSync {
       User.hasMany(AuditLog, { foreignKey: 'user_id', as: 'auditLogs', onDelete: 'CASCADE' });
       User.hasMany(ApiLog, { foreignKey: 'user_id', as: 'apiLogs', onDelete: 'SET NULL' });
 
-      // Add other model associations here
-      logger.info('Model associations initialized successfully');
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        logger.error('Error initializing model associations:', error);
-        throw new Error(`Failed to initialize associations: ${error.message}`);
-      } else {
-        logger.error('Unknown error initializing model associations');
-        throw new Error('Failed to initialize associations due to an unknown error');
-      }
+      // TrademarkSearch associations
+      TrademarkSearch.hasMany(RecommendationLog, { foreignKey: 'trademark_id', as: 'logs' });
+      
+      // Add other model associations as needed
+      
+      console.debug('[Database] Model associations initialized');
+    } catch (error) {
+      console.error('[Database] Association initialization failed:', error);
+      throw error;
     }
+  }
+
+  public getMetrics(): typeof this.metrics {
+    return this.metrics;
   }
 }
 
-const databaseSync = new DatabaseSync(Sequelize);
+const databaseSync = new DatabaseSync(new Sequelize());
 
 export {
   Sequelize,

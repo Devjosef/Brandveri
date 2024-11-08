@@ -1,6 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
+import { AuditLogMetadata } from '../../types/metadata';
 
 interface AuditLogAttributes {
   id: string;
@@ -8,7 +9,7 @@ interface AuditLogAttributes {
   action: 'login' | 'logout' | 'password_change' | 'profile_update' | 
           'settings_change' | 'data_export' | 'data_import' | 'api_key_generate' |
           'subscription_change' | 'billing_update' | 'system_setting_change';
-  details?: object;
+  details?: AuditLogMetadata;
   ip_address?: string;
   user_agent?: string;
   resource_type?: string;
@@ -20,7 +21,7 @@ class AuditLog extends Model<AuditLogAttributes> implements AuditLogAttributes {
   public id!: string;
   public user_id!: string;
   public action!: AuditLogAttributes['action'];
-  public details?: object;
+  public details?: AuditLogMetadata;
   public ip_address?: string;
   public user_agent?: string;
   public resource_type?: string;
