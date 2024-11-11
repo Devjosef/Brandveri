@@ -1,42 +1,63 @@
-import jwt, { JwtPayload, VerifyErrors } from 'jsonwebtoken';
-import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { TokenPayload } from '../auth/utils/tokenUtils';
+import { TokenService } from '../auth/services/tokenService';
+import { AuthError, AuthErrorTypes } from '../auth/utils/AuthError';
 
-// Interface for authenticated requests
-interface AuthenticatedRequest extends Request {
-  user?: string | JwtPayload; // User can be either a string (if using simple JWT payloads) or JwtPayload
+export interface AuthenticatedRequest extends Request {
+  user: TokenPayload;
 }
 
-// JWT Authentication middleware
-export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction): Response<any> | void {
-  const authHeader = req.headers['authorization']; // Get authorization header
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null; // Extract the token
+export const authenticateToken: RequestHandler<
+  never,
+  { status: string; code?: string; message: string } | { error: string }
+> = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const authHeader = req.header('authorization');
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
 
-  // If no token is provided, return a 401 Unauthorized response
   if (!token) {
-    return res.status(401).json({ error: 'Access denied. No token provided.' });
+    res.status(401).json({ error: 'Access denied. No token provided.' });
+    return;
   }
 
-  // Verify the token
-  jwt.verify(token, process.env.JWT_SECRET as string, (err: VerifyErrors | null, user: JwtPayload | string | undefined) => {
-    if (err) {
-      // Handle specific case of token expiration
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({ error: 'Token expired, please re-authenticate.' });
-      }
-      // Handle any other token verification errors
-      return res.status(403).json({ error: 'Invalid token' });
+  try {
+    const isBlacklisted = await TokenService.isTokenBlacklisted(token);
+    if (isBlacklisted) {
+      throw new AuthError(401, 'Token has been revoked', AuthErrorTypes.INVALID_TOKEN);
     }
 
-    // If the token is valid and the user is authenticated, attach the user to the request
-    if (user) {
-      req.user = user; // Assign the user to the request
-      return next(); // Call the next middleware function
-    } else {
-      // Return a 403 Forbidden response if the token is invalid
-      return res.status(403).json({ error: 'Invalid token' });
+    const user = jwt.verify(token, process.env.JWT_SECRET as string) as TokenPayload;
+    const currentTokenVersion = await TokenService.getTokenVersion(user.id);
+    
+    if (user.tokenVersion !== currentTokenVersion) {
+      throw new AuthError(401, 'Token version mismatch', AuthErrorTypes.INVALID_TOKEN);
     }
-  });
 
-  // Explicitly return undefined 
-  return;
-}
+    (req as AuthenticatedRequest).user = user;
+    next();
+  } catch (err) {
+    if (err instanceof AuthError) {
+      res.status(err.statusCode).json({
+        status: 'error',
+        code: err.code,
+        message: err.message
+      });
+      return;
+    }
+    if (err instanceof jwt.TokenExpiredError) {
+      res.status(401).json({ 
+        status: 'error',
+        code: 'TOKEN_EXPIRED',
+        message: 'Token expired, please re-authenticate.'
+      });
+      return;
+    }
+    res.status(403).json({ error: 'Invalid token' });
+    return;
+  }
+};
+

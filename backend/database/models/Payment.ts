@@ -2,6 +2,7 @@ import { Model, DataTypes } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
 import Subscription from './Subscription';
+import Invoice from './Invoice';
 
 interface PaymentAttributes {
   id: string;
@@ -33,6 +34,26 @@ class Payment extends Model<PaymentAttributes> implements PaymentAttributes {
   public refund_reason?: string;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
+
+  public static associate(): void {
+    Payment.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+
+    Payment.belongsTo(Subscription, {
+      foreignKey: 'subscription_id',
+      as: 'subscription',
+      onDelete: 'SET NULL'
+    });
+
+    Payment.belongsTo(Invoice, {
+      foreignKey: 'invoice_id',
+      as: 'invoice',
+      onDelete: 'SET NULL'
+    });
+  }
 }
 
 Payment.init(

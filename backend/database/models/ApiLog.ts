@@ -28,6 +28,14 @@ class ApiLog extends Model<ApiLogAttributes> implements ApiLogAttributes {
   public response_body?: object;
   public duration?: number;
   public readonly created_at!: Date;
+
+  public static associate(): void {
+  ApiLog.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user',
+    onDelete: 'SET NULL'
+  });
+}
 }
 
 ApiLog.init(

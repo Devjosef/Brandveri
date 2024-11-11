@@ -1,19 +1,35 @@
 import { Router } from 'express';
 import { register, login, refreshToken, logout } from '../controllers/authController';
+import { validateRegistration, validateLogin } from '../../middleware/validator';
+import { authRateLimiter, sensitiveOpsLimiter } from '../../middleware/ratelimiter';
+import { authenticateToken } from '../../middleware/auth';
+
 
 const router = Router();
 
-// Route for user registration
-router.post('/register', register);
+// Public authentication endpoints
+router.post('/register', 
+  sensitiveOpsLimiter,
+  validateRegistration, 
+  register
+);
 
-// Route for user login
-router.post('/login', login);
+router.post('/login', 
+  authRateLimiter,
+  validateLogin, 
+  login
+);
 
-// Route for refreshing access tokens
-router.post('/refresh-token', refreshToken);
+router.post('/refresh-token', 
+  authRateLimiter, 
+  refreshToken
+);
 
-// Route for logging out
-router.post('/logout', logout);
+router.post('/logout', 
+  authenticateToken,
+  authRateLimiter,
+  logout
+);
 
 export default router;
 

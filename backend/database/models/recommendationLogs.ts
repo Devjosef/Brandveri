@@ -23,6 +23,20 @@ class RecommendationLog extends Model<RecommendationLogAttributes> implements Re
   public ip_address?: string;
   public user_agent?: string;
   public readonly created_at!: Date;
+
+  public static associate(): void {
+    RecommendationLog.belongsTo(Recommendation, {
+      foreignKey: 'recommendation_id',
+      as: 'recommendation',
+      onDelete: 'CASCADE'
+    });
+
+    RecommendationLog.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 RecommendationLog.init(

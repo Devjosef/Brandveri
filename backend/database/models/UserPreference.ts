@@ -20,6 +20,14 @@ class UserPreference extends Model<UserPreferenceAttributes> implements UserPref
   public preference_category?: 'theme' | 'notification' | 'privacy' | 'display';
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
+
+  public static associate(): void {
+    UserPreference.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 UserPreference.init(

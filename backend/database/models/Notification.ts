@@ -28,6 +28,14 @@ class Notification extends Model<NotificationAttributes> implements Notification
   public expires_at?: Date;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
+
+  public static associate(): void {
+    Notification.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 Notification.init(

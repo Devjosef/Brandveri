@@ -1,5 +1,7 @@
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
+import { AuthError, AuthErrorTypes } from './AuthError';
 
 dotenv.config();
 
@@ -10,68 +12,69 @@ if (!SECRET_KEY || !REFRESH_SECRET_KEY) {
     throw new Error('JWT_SECRET or JWT_REFRESH_TOKEN environment variable is not set');
 }
 
-interface User {
-    id: number; 
+export interface TokenPayload {
+    id: number;
     username: string;
     role?: string;
+    tokenVersion?: number;
+    exp?: number;
 }
 
-const TOKEN_EXPIRATION = '1h';
+export interface RefreshTokenPayload extends Omit<TokenPayload, 'role'> {
+    tokenFamily: string;
+}
+
+const TOKEN_EXPIRATION = '15m'; // Reduced for security
 const REFRESH_TOKEN_EXPIRATION = '7d';
 
-// Generate an access token for a user
-export const generateToken = (user: User) => {
-    const payload = {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-    };
+export const generateTokenPair = (user: TokenPayload) => {
+    const tokenFamily = crypto.randomBytes(16).toString('hex');
+    
+    const accessToken = jwt.sign(
+        {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            tokenVersion: user.tokenVersion
+        },
+        SECRET_KEY,
+        { expiresIn: TOKEN_EXPIRATION }
+    );
 
-    return jwt.sign(payload, SECRET_KEY, { expiresIn: TOKEN_EXPIRATION });
+    const refreshToken = jwt.sign(
+        {
+            id: user.id,
+            username: user.username,
+            tokenVersion: user.tokenVersion,
+            tokenFamily
+        },
+        REFRESH_SECRET_KEY,
+        { expiresIn: REFRESH_TOKEN_EXPIRATION }
+    );
+
+    return { accessToken, refreshToken, tokenFamily };
 };
 
-// Generate a refresh token for a user using a different secret
-export const generateRefreshToken = (user: User) => {
-    const payload = {
-        id: user.id,
-        username: user.username,
-    };
-
-    return jwt.sign(payload, REFRESH_SECRET_KEY, { expiresIn: REFRESH_TOKEN_EXPIRATION });
-};
-
-// Verify the access token passed in the request headers
-export const verifyToken = (token: string) => {
+export const verifyToken = (token: string): TokenPayload => {
     try {
-        return jwt.verify(token, SECRET_KEY);
+        const decoded = jwt.verify(token, SECRET_KEY) as TokenPayload;
+        return decoded;
     } catch (err) {
         if (err instanceof jwt.TokenExpiredError) {
-            console.error('Access token has expired');
-            throw new Error('TokenExpired');
-        } else if (err instanceof Error) {
-            console.error('Token verification failed:', err.message);
-            throw new Error('InvalidToken');
-        } else {
-            console.error('An unknown error occurred during token verification');
-            throw new Error('UnknownError');
+            throw new AuthError(401, 'Access token has expired', AuthErrorTypes.TOKEN_EXPIRED);
         }
+        throw new AuthError(401, 'Invalid token', AuthErrorTypes.INVALID_TOKEN);
     }
 };
 
-// Verify the refresh token passed in the request headers
-export const verifyRefreshToken = (token: string) => {
+export const verifyRefreshToken = (token: string): RefreshTokenPayload => {
     try {
-        return jwt.verify(token, REFRESH_SECRET_KEY);
+        const decoded = jwt.verify(token, REFRESH_SECRET_KEY) as RefreshTokenPayload;
+        return decoded;
     } catch (err) {
         if (err instanceof jwt.TokenExpiredError) {
-            console.error('Refresh token has expired');
-            throw new Error('RefreshTokenExpired');
-        } else if (err instanceof Error) {
-            console.error('Refresh token verification failed:', err.message);
-            throw new Error('InvalidRefreshToken');
-        } else {
-            console.error('An unknown error occurred during refresh token verification');
-            throw new Error('UnknownError');
+            throw new AuthError(401, 'Refresh token has expired', AuthErrorTypes.TOKEN_EXPIRED);
         }
+        throw new AuthError(401, 'Invalid refresh token', AuthErrorTypes.INVALID_TOKEN);
     }
 };

@@ -1,5 +1,6 @@
 import { Umzug, SequelizeStorage, MigrationParams } from 'umzug';
 import { Sequelize, Transaction, QueryInterface } from 'sequelize';
+import path from 'path';
 
 interface MigrationContext {
   transaction: Transaction;
@@ -20,26 +21,38 @@ class MigrationManager {
     this.sequelize = sequelize;
     this.umzug = new Umzug({
       migrations: {
-        glob: ['migrations/*.ts', { cwd: __dirname }],
-        resolve: (params: MigrationParams<MigrationContext>) => {
-          if (!params.path) {
-            throw new Error('Migration path is undefined');
+        glob: ['*.ts', { cwd: path.join(__dirname, 'migrations') }],
+        resolve: ({ name, path: migrationPath }: MigrationParams<MigrationContext>) => {
+          if (!migrationPath) {
+            throw new Error(`Migration path is undefined for ${name}`);
           }
-          const migration = require(params.path) as MigrationFile;
+
+          // Dynamically import the migration file
+          const migration = require(migrationPath) as MigrationFile;
+
           return {
-            up: async (context: MigrationContext) => {
-              await migration.up(
-                context.queryInterface,
-                context.sequelize,
-                context.transaction
-              );
+            name,
+            up: async ({ context }: { context: MigrationContext }) => {
+              const { transaction, queryInterface, sequelize } = context;
+              
+              try {
+                await migration.up(queryInterface, sequelize, transaction);
+                await transaction.commit();
+              } catch (error) {
+                await transaction.rollback();
+                throw error;
+              }
             },
-            down: async (context: MigrationContext) => {
-              await migration.down(
-                context.queryInterface,
-                context.sequelize,
-                context.transaction
-              );
+            down: async ({ context }: { context: MigrationContext }) => {
+              const { transaction, queryInterface, sequelize } = context;
+              
+              try {
+                await migration.down(queryInterface, sequelize, transaction);
+                await transaction.commit();
+              } catch (error) {
+                await transaction.rollback();
+                throw error;
+              }
             }
           };
         },
@@ -60,13 +73,39 @@ class MigrationManager {
   async migrate(): Promise<boolean> {
     try {
       const pending = await this.umzug.pending();
-      if (pending.length > 0) {
-        console.log(`Running ${pending.length} migrations...`);
-        await this.umzug.up();
+      
+      if (pending.length === 0) {
+        console.log('No pending migrations');
+        return true;
       }
+
+      console.log(`Running ${pending.length} migrations...`);
+      const migrations = await this.umzug.up();
+      
+      console.log('Migrations completed:', migrations.map(m => m.name).join(', '));
       return true;
     } catch (error) {
       console.error('Migration failed:', error);
+      return false;
+    }
+  }
+
+  async revert(steps: number = 1): Promise<boolean> {
+    try {
+      const executed = await this.umzug.executed();
+      
+      if (executed.length === 0) {
+        console.log('No migrations to revert');
+        return true;
+      }
+
+      console.log(`Reverting ${steps} migration(s)...`);
+      const migrations = await this.umzug.down({ step: steps });
+      
+      console.log('Reverted migrations:', migrations.map(m => m.name).join(', '));
+      return true;
+    } catch (error) {
+      console.error('Revert failed:', error);
       return false;
     }
   }

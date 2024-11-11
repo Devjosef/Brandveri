@@ -1,146 +1,175 @@
-import { Request, Response } from 'express';
-import jwt, { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
-import { generateToken, generateRefreshToken } from '../utils/tokenUtils';
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { generateTokenPair } from '../utils/tokenUtils';
+import { AuthError, AuthErrorTypes } from '../utils/AuthError';
 import UserModel from '../../database/models/User';
+import { verifyRefreshToken } from '../utils/tokenUtils';
 import dotenv from 'dotenv';
+import { TokenService } from '../services/tokenService';
+import { TokenPayload } from '../utils/tokenUtils';
+import { AuthenticatedRequestHandler } from '../../types/authentication'
+
+
+
 
 dotenv.config();
 
-const REFRESH_TOKEN_SECRET = process.env.JWT_REFRESH_TOKEN;
-
-if (!REFRESH_TOKEN_SECRET) {
-    throw new Error('JWT_REFRESH_TOKEN environment variable is not set');
-}
-
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
 
-// Register a new user
-export const register = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { username, email, password } = req.body;
+export const register = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { username, email, password } = req.body;
 
-        if (!username || !email || !password) {
-            res.status(400).json({ message: 'Username, email, and password are required' });
-            return;
-        }
-
-        const existingUser = await UserModel.findOne({ where: { username } });
-        if (existingUser) {
-            res.status(400).json({ message: 'Username already exists' });
-            return;
-        }
-
-        await UserModel.create({
-            username,
-            email,
-            passwordHash: password, // The setter in User.ts will hash this
-        });
-
-        res.status(201).json({ message: 'User registered successfully' });
-    } catch (err) {
-        console.error('Error during registration:', err);
-        res.status(500).json({ message: 'Server error during registration' });
+    const existingUser = await UserModel.findOne({ where: { username } });
+    if (existingUser) {
+      throw new AuthError(400, 'Username already exists', AuthErrorTypes.USER_EXISTS);
     }
-};
 
-// Login a user and issue access/refresh tokens
-export const login = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { username, password } = req.body;
-
-        if (!username || !password) {
-            res.status(400).json({ message: 'Username and password are required' });
-            return;
-        }
-
-        const user = await UserModel.findOne({ where: { username } });
-        if (!user) {
-            res.status(400).json({ message: 'Invalid credentials' });
-            return;
-        }
-
-        const isMatch = await user.validatePassword(password);
-        if (!isMatch) {
-            res.status(400).json({ message: 'Invalid credentials' });
-            return;
-        }
-
-        const accessToken = generateToken({
-            id: user.id, // Ensure this matches the expected payload structure
-            username: user.username,
-        });
-
-        const refreshToken = generateRefreshToken({
-            id: user.id,
-            username: ''
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: COOKIE_MAX_AGE
-        });
-
-        res.json({
-            accessToken,
-            message: 'Login successful',
-        });
-    } catch (err) {
-        console.error('Error during login:', err);
-        res.status(500).json({ message: 'Server error during login' });
-    }
-};
-
-// Refresh the access token using a valid refresh token
-export const refreshToken = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { refreshToken } = req.cookies;
-
-        if (!refreshToken) {
-            res.status(400).json({ message: 'Refresh token is required' });
-            return;
-        }
-
-        const decoded = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET) as any;
-
-        const newAccessToken = generateToken({
-            id: decoded.id, 
-            username: decoded.username,
-        });
-
-        const newRefreshToken = generateRefreshToken({
-            id: decoded.id,
-            username: ''
-        });
-
-        res.cookie('refreshToken', newRefreshToken, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: COOKIE_MAX_AGE
-        });
-
-        res.json({ accessToken: newAccessToken });
-    } catch (err) {
-        if (err instanceof TokenExpiredError) {
-            res.status(403).json({ message: 'Refresh token expired' });
-        } else if (err instanceof JsonWebTokenError) {
-            res.status(403).json({ message: 'Invalid refresh token' });
-        } else {
-            console.error('Error during token refresh:', err);
-            res.status(500).json({ message: 'Server error during token refresh' });
-        }
-    }
-};
-
-// Logout and clear refresh token
-export const logout = async (_: Request, res: Response): Promise<void> => {
-    res.clearCookie('refreshToken', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+    await UserModel.create({
+      username,
+      email,
+      passwordHash: password, // Setter hash exists in user
     });
 
-    res.status(200).json({ message: 'Logged out successfully' });
+    res.status(201).json({
+      status: 'success',
+      message: 'User registered successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const login = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { username, password } = req.body;
+
+    const user = await UserModel.findOne({ where: { username } });
+    if (!user) {
+      throw new AuthError(400, 'Invalid credentials', AuthErrorTypes.INVALID_CREDENTIALS);
+    }
+
+    const isMatch = await user.validatePassword(password);
+    if (!isMatch) {
+      throw new AuthError(400, 'Invalid credentials', AuthErrorTypes.INVALID_CREDENTIALS);
+    }
+
+    const { accessToken, refreshToken } = generateTokenPair({
+      id: Number(user.id),
+      username: user.username,
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: COOKIE_MAX_AGE
+    });
+
+    res.json({
+      status: 'success',
+      data: { accessToken },
+      message: 'Login successful'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const refreshToken = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const oldRefreshToken = req.cookies.refreshToken;
+    if (!oldRefreshToken) {
+      throw new AuthError(400, 'Refresh token is required', AuthErrorTypes.MISSING_FIELDS);
+    }
+
+    const decoded = await verifyRefreshToken(oldRefreshToken);
+    
+    // Verify token family and check if token was used
+    const isValid = await TokenService.validateRefreshToken(
+      decoded.id,
+      decoded.tokenFamily,
+      oldRefreshToken
+    );
+    
+    if (!isValid) {
+      await TokenService.revokeUserTokens(decoded.id);
+      throw new AuthError(401, 'Refresh token reuse detected', AuthErrorTypes.INVALID_TOKEN);
+    }
+
+    // Generate new token pair and increment version
+    await TokenService.incrementTokenVersion(decoded.id);
+    const currentVersion = await TokenService.getTokenVersion(decoded.id);
+
+    const { accessToken, refreshToken: newRefreshToken, tokenFamily } = generateTokenPair({
+      ...decoded,
+      tokenVersion: currentVersion
+    });
+
+    // Store new refresh token
+    await TokenService.storeRefreshToken(
+      decoded.id,
+      tokenFamily,
+      newRefreshToken,
+      7 * 24 * 60 * 60 // 7 days in seconds
+    );
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: COOKIE_MAX_AGE
+    });
+
+    res.json({
+      status: 'success',
+      data: { accessToken }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const logout: AuthenticatedRequestHandler<
+  never,
+  { status: string; message: string }
+> = async (req, res, next): Promise<void> => {
+  try {
+    const authHeader = req.header('authorization');
+    const token = authHeader?.split(' ')[1];
+    if (!token) {
+      throw new AuthError(400, 'Token is required', AuthErrorTypes.MISSING_FIELDS);
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as TokenPayload;
+    const expirationTime = Math.floor((decoded.exp || 0) - Date.now() / 1000);
+    
+    await TokenService.blacklistToken(token, Math.max(expirationTime, 0));
+    await TokenService.revokeUserTokens(req.user.id);
+
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict'
+    });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
 };

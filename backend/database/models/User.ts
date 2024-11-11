@@ -2,6 +2,16 @@ import { DataTypes, Model, ValidationErrorItem } from 'sequelize';
 import sequelize from '../config';
 import bcrypt from 'bcrypt';
 import { ValidationError } from 'sequelize';
+import sessions from './sessions';
+import ApiLog from './ApiLog';
+import AuditLog from './AuditLog';
+import Copyright from './copyrightSearch';
+import Notification from './Notification';
+import Payment from './Payment';
+import Recommendation from './recommendation';
+import Subscription from './Subscription';
+import TrademarkSearch from './trademarkSearch';
+import UserPreference from './UserPreference';
 
 const SALT_ROUNDS = 12;
 
@@ -47,6 +57,68 @@ class User extends Model {
       console.error('Password validation error:', error);
       return false;
     }
+  }
+
+  public static associate(): void {
+    User.hasMany(Payment, {
+      foreignKey: 'user_id',
+      as: 'payments',
+      onDelete: 'CASCADE'
+    });
+
+    User.hasMany(TrademarkSearch, {
+      foreignKey: 'user_id',
+      as: 'trademarkSearches',
+      onDelete: 'CASCADE'
+    });
+
+    User.hasMany(Subscription, {
+      foreignKey: 'user_id',
+      as: 'subscriptions',
+      onDelete: 'CASCADE'
+    });
+
+    User.hasMany(UserPreference, {
+      foreignKey: 'user_id',
+      as: 'preferences',
+      onDelete: 'CASCADE'
+    });
+
+    User.hasMany(Notification, {
+      foreignKey: 'user_id',
+      as: 'notifications',
+      onDelete: 'CASCADE'
+    });
+
+    User.hasMany(AuditLog, {
+      foreignKey: 'user_id',
+      as: 'auditLogs',
+      onDelete: 'CASCADE'
+    });
+
+    User.hasMany(ApiLog, {
+      foreignKey: 'user_id',
+      as: 'apiLogs',
+      onDelete: 'SET NULL'
+    });
+
+    User.hasMany(sessions, {
+      foreignKey: 'user_id',
+      as: 'sessions',
+      onDelete: 'CASCADE'
+    });
+
+    User.hasMany(Copyright, {
+      foreignKey: 'user_id',
+      as: 'copyrights',
+      onDelete: 'CASCADE'
+    });
+
+    User.hasMany(Recommendation, {
+      foreignKey: 'user_id',
+      as: 'recommendations',
+      onDelete: 'CASCADE'
+    });
   }
 }
 

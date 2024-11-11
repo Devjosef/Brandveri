@@ -2,6 +2,7 @@ import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
 import { CopyrightMetadata } from '../../types/metadata';
+import CopyrightLog from './copyrightLogs';
 
 interface CopyrightAttributes {
   id: string;
@@ -35,6 +36,20 @@ class Copyright extends Model<CopyrightAttributes> implements CopyrightAttribute
   public metadata?: CopyrightMetadata;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
+  
+  public static associate(): void {
+    Copyright.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+
+    Copyright.hasMany(CopyrightLog, {
+      foreignKey: 'copyright_id',
+      as: 'logs',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 Copyright.init(

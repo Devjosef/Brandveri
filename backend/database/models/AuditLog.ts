@@ -27,6 +27,14 @@ class AuditLog extends Model<AuditLogAttributes> implements AuditLogAttributes {
   public resource_type?: string;
   public resource_id?: string;
   public readonly created_at!: Date;
+
+  public static associate(): void {
+    AuditLog.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 AuditLog.init(

@@ -2,6 +2,7 @@ import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
 import { RecommendationMetadata } from '../../types/metadata';
+import RecommendationLog from './recommendationLogs';
 
 interface RecommendationAttributes {
   id: string;
@@ -26,6 +27,20 @@ class Recommendation extends Model<RecommendationAttributes> implements Recommen
   public metadata?: RecommendationMetadata;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
+
+  public static associate(): void {
+    Recommendation.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+
+    Recommendation.hasMany(RecommendationLog, {
+      foreignKey: 'recommendation_id',
+      as: 'logs',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 Recommendation.init(

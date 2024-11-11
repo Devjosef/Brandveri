@@ -1,6 +1,7 @@
 import { DataTypes, Model } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
+import trademarkLogs from './trademarkLogs';
 
 interface TrademarkSearchAttributes {
   id: string;
@@ -25,6 +26,20 @@ class TrademarkSearch extends Model<TrademarkSearchAttributes> implements Tradem
   public search_type?: string;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
+
+  public static associate(): void {
+    TrademarkSearch.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+
+    TrademarkSearch.hasMany(trademarkLogs, {
+      foreignKey: 'trademark_id',
+      as: 'logs',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 TrademarkSearch.init(

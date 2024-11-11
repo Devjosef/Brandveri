@@ -1,6 +1,8 @@
 import { Model, DataTypes } from 'sequelize';
 import sequelize from '../config';
 import User from './User';
+import Invoice from './Invoice';
+import Payment from './Payment';
 
 interface SubscriptionAttributes {
   id: string;
@@ -32,6 +34,26 @@ class Subscription extends Model<SubscriptionAttributes> implements Subscription
   public metadata?: Record<string, unknown>;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
+
+  public static associate(): void {
+    Subscription.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+
+    Subscription.hasMany(Invoice, {
+      foreignKey: 'subscription_id',
+      as: 'invoices',
+      onDelete: 'SET NULL'
+    });
+
+    Subscription.hasMany(Payment, {
+      foreignKey: 'subscription_id',
+      as: 'payments',
+      onDelete: 'SET NULL'
+    });
+  }
 }
 
 Subscription.init(

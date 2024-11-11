@@ -163,20 +163,11 @@ class DatabaseSync {
 
   private async initializeAssociations(): Promise<void> {
     try {
-      // User associations
-      User.hasMany(Payment, { foreignKey: 'user_id', as: 'payments', onDelete: 'CASCADE' });
-      User.hasMany(TrademarkSearch, { foreignKey: 'user_id', as: 'trademarkSearches', onDelete: 'CASCADE' });
-      User.hasMany(Subscription, { foreignKey: 'user_id', as: 'subscriptions', onDelete: 'CASCADE' });
-      User.hasMany(UserPreference, { foreignKey: 'user_id', as: 'preferences', onDelete: 'CASCADE' });
-      User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications', onDelete: 'CASCADE' });
-      User.hasMany(AuditLog, { foreignKey: 'user_id', as: 'auditLogs', onDelete: 'CASCADE' });
-      User.hasMany(ApiLog, { foreignKey: 'user_id', as: 'apiLogs', onDelete: 'SET NULL' });
-
-      // TrademarkSearch associations
-      TrademarkSearch.hasMany(RecommendationLog, { foreignKey: 'trademark_id', as: 'logs' });
-      
-      // Add other model associations as needed
-      
+      for (const model of models) {
+        if ('associate' in model && typeof model.associate === 'function') {
+          model.associate();
+        }
+      }
       console.debug('[Database] Model associations initialized');
     } catch (error) {
       console.error('[Database] Association initialization failed:', error);

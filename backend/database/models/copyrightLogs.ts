@@ -23,6 +23,20 @@ class CopyrightLog extends Model<CopyrightLogAttributes> implements CopyrightLog
   public ip_address?: string;
   public user_agent?: string;
   public readonly created_at!: Date;
+
+  public static associate(): void {
+    CopyrightLog.belongsTo(Copyright, {
+      foreignKey: 'copyright_id',
+      as: 'copyright',
+      onDelete: 'CASCADE'
+    });
+
+    CopyrightLog.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 CopyrightLog.init(

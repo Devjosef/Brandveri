@@ -23,6 +23,20 @@ class TrademarkLog extends Model<TrademarkLogAttributes> implements TrademarkLog
   public ip_address?: string;
   public user_agent?: string;
   public readonly created_at!: Date;
+
+  public static associate(): void {
+    TrademarkLog.belongsTo(TrademarkSearch, {
+      foreignKey: 'trademark_id',
+      as: 'trademark',
+      onDelete: 'CASCADE'
+    });
+
+    TrademarkLog.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 TrademarkLog.init(

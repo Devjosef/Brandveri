@@ -63,6 +63,14 @@ class Session extends Model<SessionAttributes> implements SessionAttributes {
     const hash = await Session.hashToken(token);
     return hash === this.token_hash || hash === this.previous_token_hash;
   }
+
+  public static associate(): void {
+    Session.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+  }
 }
 
 Session.init(

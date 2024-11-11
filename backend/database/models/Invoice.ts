@@ -35,6 +35,20 @@ class Invoice extends Model<InvoiceAttributes> implements InvoiceAttributes {
   public notes?: string;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
+
+  public static associate(): void {
+    Invoice.belongsTo(User, {
+      foreignKey: 'user_id',
+      as: 'user',
+      onDelete: 'CASCADE'
+    });
+
+    Invoice.belongsTo(Subscription, {
+      foreignKey: 'subscription_id',
+      as: 'subscription',
+      onDelete: 'SET NULL'
+    });
+  }
 }
 
 Invoice.init(
