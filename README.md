@@ -1,4 +1,4 @@
-# Brandveri setting up cloud infrastructure.
+# Brandveri 
 
 A powerful, AI-driven tool for brand name generation, trademark, and copyright verification. With seamless integration with APIs from the European Union Intellectual Property Office (EUIPO) and United States Patent and Trademark Office (USPTO), Brandveri helps entrepreneurs, startups, and businesses secure their brand identity in real-time.
 
