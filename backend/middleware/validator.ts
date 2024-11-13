@@ -1,70 +1,107 @@
-import { body, validationResult, ValidationChain } from 'express-validator';
+import { z } from 'zod';
 import { Request, Response, NextFunction } from 'express';
 import { AuthError } from '../auth/utils/AuthError';
+import { sensitiveOpsLimiter } from './ratelimiter';
+import { Counter, Histogram } from 'prom-client';
 
-// Common validation rules
-const passwordRules = [
-  body('password')
-    .isLength({ min: 12, max: 128 })
-    .withMessage('Password must be between 12 and 128 characters')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
-    .withMessage('Password must include: uppercase, lowercase, number, and special character')
-    .trim(),
-];
+// Metrics for validation monitoring
+const validationErrors = new Counter({
+  name: 'validation_errors_total',
+  help: 'Total number of validation errors',
+  labelNames: ['context', 'field']
+});
 
-const usernameRules = [
-  body('username')
+const validationDuration = new Histogram({
+  name: 'validation_duration_seconds',
+  help: 'Duration of validation operations',
+  labelNames: ['context']
+});
+
+// Define strict types for validation contexts
+type ValidationContext = 'registration' | 'login' | 'passwordReset';
+
+// Centralized validation schemas
+const ValidationSchemas = {
+  username: z.string()
     .trim()
-    .isLength({ min: 5, max: 30 })
-    .withMessage('Username must be between 5 and 30 characters')
-    .matches(/^[a-zA-Z0-9_]+$/)
-    .withMessage('Username can only contain letters, numbers, and underscores')
-    .escape(),
-];
+    .min(5, 'Username must be at least 5 characters')
+    .max(30, 'Username must be at most 30 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores')
+    .transform(val => val.toLowerCase()),
 
-const emailRules = [
-  body('email')
+  password: z.string()
     .trim()
-    .isEmail()
-    .withMessage('Invalid email address')
-    .normalizeEmail()
-    .escape(),
-];
+    .min(12, 'Password must be at least 12 characters')
+    .max(128, 'Password must be at most 128 characters')
+    .regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
+      'Password must include: uppercase, lowercase, number, and special character'
+    ),
 
-// Validation chains
-export const registrationValidation: ValidationChain[] = [
-  ...usernameRules,
-  ...emailRules,
-  ...passwordRules,
-];
+  email: z.string()
+    .trim()
+    .email('Invalid email address')
+    .transform(val => val.toLowerCase())
+};
 
-export const loginValidation: ValidationChain[] = [
-  body('username').trim().notEmpty().withMessage('Username is required').escape(),
-  body('password').notEmpty().withMessage('Password is required'),
-];
+// Schema compositions with strict type checking
+const RegistrationSchema = z.object({
+  username: ValidationSchemas.username,
+  email: ValidationSchemas.email,
+  password: ValidationSchemas.password
+}).strict();
 
-// Validation handler with proper error handling.
-export const validate = (validations: ValidationChain[]) => {
+const LoginSchema = z.object({
+  username: ValidationSchemas.username,
+  password: z.string().min(1, 'Password is required')
+}).strict();
+
+// Validation middleware factory with metrics
+export const createValidator = (schema: z.ZodSchema, context: ValidationContext) => {
   return async (req: Request, _res: Response, next: NextFunction) => {
-    // Execute all validations
-    await Promise.all(validations.map(validation => validation.run(req)));
+    const end = validationDuration.startTimer({ context });
+    
+    try {
+      const sanitizedData = await schema.parseAsync(req.body);
+      req.body = sanitizedData;
+      end();
+      next();
+    } catch (error) {
+      end();
+      if (error instanceof z.ZodError) {
+        error.issues.forEach(issue => {
+          validationErrors.inc({
+            context,
+            field: issue.path.join('.')
+          });
+        });
 
-    const errors = validationResult(req);
-    if (errors.isEmpty()) {
-      return next();
+        const errorMessage = error.issues
+          .map(issue => `${issue.path.join('.')}: ${issue.message}`)
+          .join('; ');
+
+        throw new AuthError(
+          400,
+          errorMessage,
+          'VALIDATION_ERROR'
+        );
+      }
+      next(error);
     }
-
-    // Matches AuthError structure
-    const errorMessages = errors.array().map(error => error.msg).join(', ');
-
-    throw new AuthError(
-      400,
-      errorMessages,
-      'VALIDATION_ERROR'
-    );
   };
 };
 
-// Export validation chains with handler
-export const validateRegistration = validate(registrationValidation);
-export const validateLogin = validate(loginValidation);
+// Export validation middlewares with rate limiting
+export const validateRegistration = [
+  sensitiveOpsLimiter,
+  createValidator(RegistrationSchema, 'registration')
+];
+
+export const validateLogin = [
+  createValidator(LoginSchema, 'login')
+];
+
+// Type guard for runtime validation
+export const isValidationError = (error: unknown): error is z.ZodError => {
+  return error instanceof z.ZodError;
+};

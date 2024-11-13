@@ -78,3 +78,31 @@ groups:
         annotations:
           summary: "High latency in copyright service"
           description: "Copyright service endpoints are responding slowly (>2s)"
+        
+        # Authentication Alerts
+      - alert: HighAuthFailureRate
+        expr: rate(auth_attempts_total{status=~"auth_error|invalid_token"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failure rate"
+          description: "More than 10% of authentication attempts are failing"
+
+      - alert: HighValidationErrorRate
+        expr: rate(validation_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High validation error rate"
+          description: "More than 10% of requests are failing validation"
+
+      - alert: RateLimitExceeded
+        expr: rate(rate_limit_exceeded_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate limit violations"
+          description: "Multiple rate limit violations detected"

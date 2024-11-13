@@ -10,3 +10,14 @@ export interface PaginationParams {
     page: number;
     limit: number;
 }
+
+// Express related request Types
+import { Request } from 'express';
+
+declare global {
+  namespace Express {
+    interface Request {
+      id: string;
+    }
+  }
+}
