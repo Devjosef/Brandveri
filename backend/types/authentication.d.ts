@@ -12,11 +12,24 @@ export interface User {
     email: string;
     createdAt: Date;
     updatedAt: Date;
+    lastLogin?: Date;           // Track last login
+    failedLoginAttempts?: number; // Security tracking
+    accountLocked?: boolean;    // Account security status
+    emailVerified: boolean;     // Email verification status
+    role: UserRole;            // User role enum
+    status: UserStatus;        // Account status enum
+    tokenVersion: number;      // For token invalidation
 }
 
 export interface AuthRequest {
     username: string;
     password: string;
+    deviceId?: string;         // For device tracking
+    clientInfo?: {            // Client information
+        userAgent: string;
+        ipAddress: string;
+        deviceType: string;
+    };
 }
 
 export interface AuthResponse {
@@ -28,9 +41,12 @@ export interface AuthResponse {
 export interface TokenPayload {
     id: number;
     username: string;
-    role?: string;
-    tokenVersion?: number;
-    exp?: number;
+    role: UserRole;           // Make required
+    tokenVersion: number;     // Make required
+    exp: number;             // Make required
+    iat: number;             // Issued at
+    deviceId?: string;       // Device tracking
+    permissions?: string[];  // Granular permissions
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -67,3 +83,61 @@ export type AuthAction =
     | 'token_revoked'
     | 'invalid_token'
     | 'authentication_failed';
+
+export enum UserRole {
+    ADMIN = 'admin',
+    USER = 'user',
+    MODERATOR = 'moderator'
+}
+
+export enum UserStatus {
+    ACTIVE = 'active',
+    INACTIVE = 'inactive',
+    SUSPENDED = 'suspended',
+    PENDING_VERIFICATION = 'pending_verification'
+}
+
+export interface RateLimitConfig {
+    windowMs: number;
+    maxRequests: number;
+    message: string;
+    statusCode: number;
+}
+
+export interface RateLimitInfo {
+    limit: number;
+    current: number;
+    remaining: number;
+    resetTime: Date;
+}
+
+export enum AuthErrorCode {
+    INVALID_CREDENTIALS = 'invalid_credentials',
+    ACCOUNT_LOCKED = 'account_locked',
+    TOKEN_EXPIRED = 'token_expired',
+    TOKEN_INVALID = 'token_invalid',
+    INSUFFICIENT_PERMISSIONS = 'insufficient_permissions',
+    RATE_LIMIT_EXCEEDED = 'rate_limit_exceeded'
+}
+
+export interface AuthError extends Error {
+    code: AuthErrorCode;
+    statusCode: number;
+    details?: Record<string, unknown>;
+}
+
+export interface AuthSession extends Session {
+    userId: number;
+    deviceId?: string;
+    lastActivity: Date;
+    ipAddress: string;
+    userAgent: string;
+}
+
+export interface SessionConfig {
+    maxAge: number;
+    secure: boolean;
+    sameSite: boolean | 'lax' | 'strict' | 'none';
+    domain?: string;
+    rolling: boolean;
+}

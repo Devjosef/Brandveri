@@ -1,7 +1,23 @@
+import { AuthError } from '../../../auth/utils/AuthError';
+import { Counter, Histogram } from 'prom-client';
 import CopyrightSearch from '../../../database/models/copyrightSearch';
 import { Op } from 'sequelize';
 import { CopyrightSearchParams, CopyrightRegistration } from '../../../types/copyright';
 import { getCache, setCache } from '../../utils/cache'; // Import cache functions
+
+// Add metrics for copyright operations
+const copyrightMetrics = {
+  operations: new Counter({
+    name: 'copyright_operations_total',
+    help: 'Total number of copyright operations',
+    labelNames: ['operation', 'status']
+  }),
+  duration: new Histogram({
+    name: 'copyright_operation_duration_seconds',
+    help: 'Duration of copyright operations',
+    labelNames: ['operation']
+  })
+};
 
 class CopyrightService {
   
@@ -11,7 +27,9 @@ class CopyrightService {
    * @returns List of copyright search results
    */
   async getAllCopyrights(filters: { author?: string; title?: string; registration_number?: string }) {
+    const end = copyrightMetrics.duration.startTimer({ operation: 'getAllCopyrights' });
     try {
+      copyrightMetrics.operations.inc({ operation: 'getAllCopyrights', status: 'attempt' });
       const whereClause: Record<string, any> = {}; // Define the type of whereClause
       
       // Apply filters to the query if provided
@@ -29,10 +47,14 @@ class CopyrightService {
         where: whereClause,
       });
       
+      copyrightMetrics.operations.inc({ operation: 'getAllCopyrights', status: 'success' });
       return copyrights;
     } catch (error) {
+      copyrightMetrics.operations.inc({ operation: 'getAllCopyrights', status: 'error' });
       console.error('Error fetching copyrights:', error);
-      throw new Error('Could not fetch copyrights');
+      throw new AuthError(500, 'Could not fetch copyrights', 'DATABASE_ERROR');
+    } finally {
+      end();
     }
   }
 
@@ -42,7 +64,9 @@ class CopyrightService {
    * @returns A promise containing the response data.
    */
   async searchCopyright(params: CopyrightSearchParams) {
+    const end = copyrightMetrics.duration.startTimer({ operation: 'searchCopyright' });
     try {
+      copyrightMetrics.operations.inc({ operation: 'searchCopyright', status: 'attempt' });
       const { query, page = 1, limit = 10 } = params;
       const cacheKey = `copyright:search:${query}:${page}:${limit}`;
 
@@ -66,16 +90,18 @@ class CopyrightService {
       // Set cache with fetched data
       await setCache(cacheKey, copyrights);
 
+      copyrightMetrics.operations.inc({ operation: 'searchCopyright', status: 'success' });
       return {
         success: true,
         data: copyrights,
       };
     } catch (error) {
+      copyrightMetrics.operations.inc({ operation: 'searchCopyright', status: 'error' });
       console.error('Error searching copyrights:', error);
-      return {
-        success: false,
-        error: 'Failed to search copyrights',
-      };
+      if (error instanceof AuthError) throw error;
+      throw new AuthError(500, 'Failed to search copyrights', 'DATABASE_ERROR');
+    } finally {
+      end();
     }
   }
 
@@ -84,13 +110,22 @@ class CopyrightService {
    * @param id The ID of the copyright record
    * @returns The copyright record if found, or null
    */
-  async getCopyrightById(id: number) {
+  async getCopyrightById(id: number): Promise<ApiResponse<Copyright>> {
+    const end = copyrightMetrics.duration.startTimer({ operation: 'getCopyrightById' });
     try {
+      copyrightMetrics.operations.inc({ operation: 'getCopyrightById', status: 'attempt' });
       const copyright = await CopyrightSearch.findByPk(id);
-      return copyright;
+      if (!copyright) {
+        throw new AuthError(404, 'Copyright not found', 'NOT_FOUND');
+      }
+      copyrightMetrics.operations.inc({ operation: 'getCopyrightById', status: 'success' });
+      return { success: true, data: copyright };
     } catch (error) {
-      console.error('Error fetching copyright by ID:', error);
-      throw new Error('Could not fetch copyright by ID');
+      copyrightMetrics.operations.inc({ operation: 'getCopyrightById', status: 'error' });
+      if (error instanceof AuthError) throw error;
+      throw new AuthError(500, 'Could not fetch copyright', 'DATABASE_ERROR');
+    } finally {
+      end();
     }
   }
 
