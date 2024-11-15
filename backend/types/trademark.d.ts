@@ -108,3 +108,41 @@ export interface TrademarkWatchRequest {
         classes: TrademarkClass[];
     };
 }
+
+export enum TrademarkErrorCode {
+    QUOTA_EXCEEDED = 'QUOTA_EXCEEDED',
+    INVALID_JURISDICTION = 'INVALID_JURISDICTION',
+    API_ERROR = 'API_ERROR',
+    VALIDATION_ERROR = 'VALIDATION_ERROR'
+}
+
+export interface TrademarkError {
+    code: TrademarkErrorCode;
+    message: string;
+    details?: any;
+}
+
+export interface ValidationErrorDetail {
+    field: string;
+    message: string;
+    value?: unknown;
+    constraints?: string[];
+}
+
+export interface TrademarkValidationError extends TrademarkError {
+    code: TrademarkErrorCode.VALIDATION_ERROR;
+    details: {
+        errors: ValidationErrorDetail[];
+        metadata?: Record<string, unknown>;
+    };
+}
+
+export type TrademarkErrorResponse = {
+    success: false;
+    error: TrademarkError;
+    metadata?: {
+        requestId: string;
+        timestamp: Date;
+        path: string;
+    };
+};
