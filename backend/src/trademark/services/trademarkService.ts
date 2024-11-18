@@ -5,14 +5,17 @@ import {
   TrademarkError, 
   TrademarkErrorCode,
   TrademarkStatus,
-  TrademarkClass
+  JurisdictionType
 } from '../../../types/trademark';
 import { Counter, Histogram } from 'prom-client';
 import { Cache } from '../../utils/cache';
+import { generateSearchCacheKey, normalizeTrademarkQuery } from '../utils/trademarkUtils';
+import { formatTrademarkResponse } from '../utils/responseFormatter';
+import { TrademarkError } from '../utils/trademarkError';
+import axios, { AxiosInstance } from 'axios';
 import { env } from '../../config/env';
-import axios from 'axios';
 
-// Enhanced metrics
+// Metrics for trademark operations
 const trademarkMetrics = {
   operations: new Counter({
     name: 'trademark_operations_total',
@@ -24,37 +27,29 @@ const trademarkMetrics = {
     help: 'Duration of trademark search operations',
     labelNames: ['jurisdiction'],
     buckets: [0.1, 0.5, 1, 2, 5]
-  }),
-  monitoringAlerts: new Counter({
-    name: 'trademark_monitoring_alerts_total',
-    help: 'Total number of trademark monitoring alerts',
-    labelNames: ['type', 'jurisdiction']
   })
 };
 
 class TrademarkService {
   private readonly cache: Cache;
-  private readonly usptoApiClient: axios.InstanceType;
-  private readonly euipoApiClient: axios.InstanceType;
+  private readonly usptoClient: AxiosInstance;
+  private readonly euipoClient: AxiosInstance;
 
   constructor() {
-    this.cache = new Cache('trademark');
-    
-    this.usptoApiClient = axios.create({
+    this.cache = new Cache();
+    this.usptoClient = axios.create({
       baseURL: env.USPTO_API_URL,
+      timeout: 5000,
       headers: { 'X-API-Key': env.USPTO_API_KEY }
     });
-
-    this.euipoApiClient = axios.create({
+    this.euipoClient = axios.create({
       baseURL: env.EUIPO_API_URL,
-      headers: { 
-        'X-API-Key': env.EUIPO_API_KEY,
-        'X-API-Secret': env.EUIPO_API_SECRET
-      }
+      timeout: 5000,
+      headers: { 'X-API-Key': env.EUIPO_API_KEY }
     });
   }
 
-  async searchTrademark(params: TrademarkSearchParams): Promise<TrademarkResponse> {
+  async searchTrademark(params: Readonly<TrademarkSearchParams>): Promise<TrademarkResponse> {
     const timer = trademarkMetrics.searchDuration.startTimer();
     
     try {
@@ -64,7 +59,7 @@ class TrademarkService {
         jurisdiction: params.jurisdiction?.join(',') || 'all'
       });
 
-      const cacheKey = this.generateCacheKey(params);
+      const cacheKey = generateSearchCacheKey(params);
       const cachedResult = await this.cache.get<TrademarkResponse>(cacheKey);
       
       if (cachedResult) {
@@ -77,17 +72,8 @@ class TrademarkService {
       }
 
       const results = await this.searchAllRegistries(params);
-      const response: TrademarkResponse = {
-        success: true,
-        data: results,
-        similarMarks: await this.findSimilarMarks(results),
-        metadata: {
-          requestId: crypto.randomUUID(),
-          timestamp: new Date(),
-          path: '/api/trademark/search'
-        }
-      };
-
+      const response = formatTrademarkResponse(results);
+      
       await this.cache.set(cacheKey, response);
       
       trademarkMetrics.operations.inc({ 
@@ -97,25 +83,21 @@ class TrademarkService {
       });
 
       return response;
+
     } catch (error) {
       trademarkMetrics.operations.inc({ 
         operation: 'search', 
         status: 'error',
         jurisdiction: params.jurisdiction?.join(',') || 'all'
       });
-
-      throw this.handleError(error);
+      throw TrademarkError.fromUnknown(error);
     } finally {
       timer();
     }
   }
 
-  private generateCacheKey(params: TrademarkSearchParams): string {
-    return `trademark:${JSON.stringify(params)}`;
-  }
-
   private async searchAllRegistries(params: TrademarkSearchParams): Promise<Trademark[]> {
-    const searchPromises = [];
+    const searchPromises: Promise<Trademark[]>[] = [];
     
     if (!params.jurisdiction || params.jurisdiction.includes('USPTO')) {
       searchPromises.push(this.searchUSPTO(params));
@@ -129,26 +111,15 @@ class TrademarkService {
     return results.flat();
   }
 
-  private handleError(error: any): TrademarkError {
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 429) {
-        return {
-          code: TrademarkErrorCode.QUOTA_EXCEEDED,
-          message: 'API rate limit exceeded'
-        };
-      }
-      return {
-        code: TrademarkErrorCode.API_ERROR,
-        message: error.message
-      };
-    }
-    
-    return {
-      code: TrademarkErrorCode.VALIDATION_ERROR,
-      message: 'Invalid request parameters'
-    };
+  private async searchUSPTO(params: TrademarkSearchParams): Promise<Trademark[]> {
+    // USPTO API implementation
+    return [];
+  }
+
+  private async searchEUIPO(params: TrademarkSearchParams): Promise<Trademark[]> {
+    // EUIPO API implementation
+    return [];
   }
 }
 
 export const trademarkService = new TrademarkService();
-
