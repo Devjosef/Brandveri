@@ -12,9 +12,12 @@ interface TrademarkSearchAttributes {
   status: 'pending' | 'completed' | 'failed';
   jurisdiction?: string;
   search_type?: string;
+  nice_classes?: number[];
+  class_descriptions?: Record<string, string>;
   readonly created_at: Date;
   readonly updated_at: Date;
 }
+
 class TrademarkSearch extends Model<TrademarkSearchAttributes> implements TrademarkSearchAttributes {
   public id!: string;
   public user_id!: string;
@@ -24,6 +27,8 @@ class TrademarkSearch extends Model<TrademarkSearchAttributes> implements Tradem
   public status!: 'pending' | 'completed' | 'failed';
   public jurisdiction?: string;
   public search_type?: string;
+  public nice_classes?: number[];
+  public class_descriptions?: Record<string, string>;
   public readonly created_at!: Date;
   public readonly updated_at!: Date;
 
@@ -84,6 +89,16 @@ TrademarkSearch.init(
       type: DataTypes.STRING(50),
       allowNull: true,
     },
+    nice_classes: {
+      type: DataTypes.ARRAY(DataTypes.INTEGER),
+      allowNull: true,
+      defaultValue: [],
+    },
+    class_descriptions: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+    },
     created_at: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW,
@@ -106,7 +121,9 @@ TrademarkSearch.init(
       { fields: ['search_date'] },
       { fields: ['status'] },
       { fields: ['jurisdiction'] },
-      { using: 'gin', fields: ['results'] }
+      { using: 'gin', fields: ['results'] },
+      { using: 'gin', fields: ['nice_classes'] },
+      { using: 'gin', fields: ['class_descriptions'] }
     ]
   }
 );

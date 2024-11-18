@@ -9,6 +9,8 @@ interface TrademarkLogAttributes {
   user_id: string;
   action: 'search' | 'view' | 'export' | 'update' | 'delete';
   details?: Record<string, unknown>;
+  nice_classes?: number[];
+  class_descriptions?: Record<string, string>;
   ip_address?: string;
   user_agent?: string;
   readonly created_at: Date;
@@ -20,6 +22,8 @@ class TrademarkLog extends Model<TrademarkLogAttributes> implements TrademarkLog
   public user_id!: string;
   public action!: 'search' | 'view' | 'export' | 'update' | 'delete';
   public details?: Record<string, unknown>;
+  public nice_classes?: number[];
+  public class_descriptions?: Record<string, string>;
   public ip_address?: string;
   public user_agent?: string;
   public readonly created_at!: Date;
@@ -72,6 +76,16 @@ TrademarkLog.init(
       type: DataTypes.JSONB,
       defaultValue: {},
     },
+    nice_classes: {
+      type: DataTypes.ARRAY(DataTypes.INTEGER),
+      allowNull: true,
+      defaultValue: [],
+    },
+    class_descriptions: {
+      type: DataTypes.JSONB,
+      allowNull: true,
+      defaultValue: {},
+    },
     ip_address: {
       type: DataTypes.INET,
       allowNull: true,
@@ -95,7 +109,9 @@ TrademarkLog.init(
       { fields: ['user_id'] },
       { fields: ['action'] },
       { fields: ['created_at'] },
-      { using: 'gin', fields: ['details'] }
+      { using: 'gin', fields: ['details'] },
+      { using: 'gin', fields: ['nice_classes'] },
+      { using: 'gin', fields: ['class_descriptions'] }
     ]
   }
 );
