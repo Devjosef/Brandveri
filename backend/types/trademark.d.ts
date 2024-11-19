@@ -23,11 +23,59 @@ export enum TrademarkErrorCode {
     RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED'
 }
 
-export type NiceClassification = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 
+export type NiceClassificationType = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 
     11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 | 
     21 | 22 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 
     31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 
     41 | 42 | 43 | 44 | 45;
+
+export enum NiceClassification {
+    CLASS_1 = 1,
+    CLASS_2 = 2,
+    CLASS_3 = 3,
+    CLASS_4 = 4,
+    CLASS_5 = 5,
+    CLASS_6 = 6,
+    CLASS_7 = 7,
+    CLASS_8 = 8,
+    CLASS_9 = 9,
+    CLASS_10 = 10,
+    CLASS_11 = 11,
+    CLASS_12 = 12,
+    CLASS_13 = 13,
+    CLASS_14 = 14,
+    CLASS_15 = 15,
+    CLASS_16 = 16,
+    CLASS_17 = 17,
+    CLASS_18 = 18,
+    CLASS_19 = 19,
+    CLASS_20 = 20,
+    CLASS_21 = 21,
+    CLASS_22 = 22,
+    CLASS_23 = 23,
+    CLASS_24 = 24,
+    CLASS_25 = 25,
+    CLASS_26 = 26,
+    CLASS_27 = 27,
+    CLASS_28 = 28,
+    CLASS_29 = 29,
+    CLASS_30 = 30,
+    CLASS_31 = 31,
+    CLASS_32 = 32,
+    CLASS_33 = 33,
+    CLASS_34 = 34,
+    CLASS_35 = 35,
+    CLASS_36 = 36,
+    CLASS_37 = 37,
+    CLASS_38 = 38,
+    CLASS_39 = 39,
+    CLASS_40 = 40,
+    CLASS_41 = 41,
+    CLASS_42 = 42,
+    CLASS_43 = 43,
+    CLASS_44 = 44,
+    CLASS_45 = 45
+}
 
 export type JurisdictionType = 'USPTO' | 'EUIPO';
 

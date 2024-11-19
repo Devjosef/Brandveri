@@ -1,62 +1,97 @@
-import { body, query, ValidationChain } from 'express-validator';
+import { z } from 'zod';
 import { NiceClassification } from '../../../types/trademark';
+import { createValidator } from '../../../middleware/validator'
 
-export const validateTrademarkSearch: ValidationChain[] = [
-  query('q')
-    .isString().withMessage('Query must be a string')
-    .isLength({ min: 3, max: 255 }).withMessage('Query must be between 3 and 255 characters')
+// Extend ValidationContext type in validator.ts
+declare module '../../../middleware/validator' {
+  interface ValidationContextMap {
+    trademark_search: 'trademark_search';
+    trademark_registration: 'trademark_registration';
+  }
+}
+
+
+// Shared schemas for reuse
+const TrademarkSchemas = {
+  niceClasses: z.array(
+    z.number()
+      .int()
+      .min(1)
+      .max(45)
+      .refine(
+        (val): val is NiceClassification => 
+          Object.values(NiceClassification).includes(val),
+        'Invalid Nice classification'
+      )
+  )
+    .refine(
+      classes => classes.every(c => Object.values(NiceClassification).includes(c)),
+      'Invalid Nice classification'
+    ),
+
+  jurisdiction: z.array(z.enum(['USPTO', 'EUIPO']))
+    .default(['USPTO', 'EUIPO']),
+
+  description: z.string()
     .trim()
-    .escape(),
-  
-  query('niceClasses')
-    .optional()
-    .isArray().withMessage('Nice classes must be an array')
-    .custom((classes: number[]) => {
-      return classes.every(c => Object.values(NiceClassification).includes(c));
-    }).withMessage('Invalid Nice classification'),
-    
-  query('jurisdiction')
-    .optional()
-    .isArray().withMessage('Jurisdiction must be an array')
-    .custom((jurisdictions: string[]) => {
-      return jurisdictions.every(j => ['USPTO', 'EUIPO'].includes(j));
-    }).withMessage('Invalid jurisdiction'),
-    
-  query('page')
-    .optional()
-    .isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-    
-  query('limit')
-    .optional()
-    .isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100')
-];
+    .max(1000, 'Description must not exceed 1000 characters')
+    .optional(),
 
-export const validateTrademarkRegistration: ValidationChain[] = [
-  body('name')
-    .isString().withMessage('Name must be a string')
-    .isLength({ min: 3, max: 255 }).withMessage('Name must be between 3 and 255 characters')
-    .trim(),
+  owner: z.object({
+    name: z.string().min(1, 'Owner name is required'),
+    address: z.string().min(1, 'Owner address is required')
+  })
+};
+
+// Search validation schema
+const TrademarkSearchSchema = z.object({
+  q: z.string()
+    .trim()
+    .min(3, 'Query must be at least 3 characters')
+    .max(255, 'Query must not exceed 255 characters')
+    .transform(val => val.toLowerCase()),
   
-  body('niceClasses')
-    .isArray().withMessage('Nice classes must be an array')
-    .custom((classes: number[]) => {
-      return classes.every(c => Object.values(NiceClassification).includes(c));
-    }).withMessage('Invalid Nice classification'),
+  niceClasses: TrademarkSchemas.niceClasses.optional(),
+  jurisdiction: TrademarkSchemas.jurisdiction.optional(),
   
-  body('jurisdiction')
-    .isIn(['USPTO', 'EUIPO']).withMessage('Invalid jurisdiction'),
-  
-  body('description')
+  page: z.number()
+    .int()
+    .min(1, 'Page must be a positive integer')
     .optional()
-    .isString().withMessage('Description must be a string')
-    .isLength({ max: 1000 }).withMessage('Description must not exceed 1000 characters'),
+    .default(1),
   
-  body('owner')
-    .isObject().withMessage('Owner information is required')
-    .custom((value) => {
-      if (!value.name || !value.address) {
-        throw new Error('Owner must include name and address');
-      }
-      return true;
-    })
-];
+  limit: z.number()
+    .int()
+    .min(1, 'Limit must be at least 1')
+    .max(100, 'Limit must not exceed 100')
+    .optional()
+    .default(20)
+}).strict();
+
+// Registration validation schema
+const TrademarkRegistrationSchema = z.object({
+  name: z.string()
+    .trim()
+    .min(3, 'Name must be at least 3 characters')
+    .max(255, 'Name must not exceed 255 characters'),
+  
+  niceClasses: TrademarkSchemas.niceClasses,
+  jurisdiction: TrademarkSchemas.jurisdiction,
+  description: TrademarkSchemas.description,
+  owner: TrademarkSchemas.owner
+}).strict();
+
+// Export validators with metrics
+export const validateTrademarkSearch = createValidator(
+  TrademarkSearchSchema,
+  'trademark_search'
+);
+
+export const validateTrademarkRegistration = createValidator(
+  TrademarkRegistrationSchema,
+  'trademark_registration'
+);
+
+// Type exports for use in service layer
+export type TrademarkSearchSchemaType = z.infer<typeof TrademarkSearchSchema>;
+export type TrademarkRegistrationSchemaType = z.infer<typeof TrademarkRegistrationSchema>;

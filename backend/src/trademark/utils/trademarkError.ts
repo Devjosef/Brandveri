@@ -16,7 +16,7 @@ export class TrademarkError extends Error {
   ) {
     super(message);
     this.name = 'TrademarkError';
-    
+    this.name = 'TrademarkError';
     errorMetrics.inc({
       error_type: this.name,
       code: this.code

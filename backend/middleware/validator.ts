@@ -18,7 +18,14 @@ const validationDuration = new Histogram({
 });
 
 // Define strict types for validation contexts
-type ValidationContext = 'registration' | 'login' | 'passwordReset';
+export type ValidationContext = string;
+
+// This allows the type to be extended
+export interface ValidationContextMap {
+  registration: 'registration';
+  login: 'login';
+  passwordReset: 'passwordReset';
+}
 
 // Centralized validation schemas
 const ValidationSchemas = {
