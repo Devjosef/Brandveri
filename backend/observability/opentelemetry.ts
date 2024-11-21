@@ -1,9 +1,5 @@
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { Resource } from '@opentelemetry/resources';
-import {
-    ATTR_SERVICE_NAME,
-    ATTR_SERVICE_VERSION,
-  } from '@opentelemetry/semantic-conventions';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { BatchSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
@@ -24,14 +20,24 @@ class OpenTelemetryService {
 
     this.sdk = new NodeSDK({
       resource: new Resource({
-        [ATTR_SERVICE_NAME]: 'brandveri-api',
-        [ATTR_SERVICE_VERSION]: process.env.npm_package_version,
-        [ATTR_DEPLOYMENT_ENVIRONMENT]: env.NODE_ENV
+        'service.name': 'brandveri-api',
+        'service.version': process.env.npm_package_version,
+        'deployment.environment': env.NODE_ENV,
+        'service.namespace': 'docucomp',
+        'host.name': process.env.HOSTNAME,
       }),
       spanProcessor: new BatchSpanProcessor(traceExporter),
       instrumentations: [
-        new HttpInstrumentation(),
-        new ExpressInstrumentation(),
+        new HttpInstrumentation({
+          requestHook: (span, request) => {
+            if ('headers' in request && request.headers['x-request-id']) {
+              span.setAttribute('http.request.id', request.headers['x-request-id']);
+            }
+          }
+        }),
+        new ExpressInstrumentation({
+          ignoreLayers: ['/health', '/metrics']
+        }),
         new PrismaInstrumentation()
       ]
     });
