@@ -11,6 +11,8 @@ const envSchema = z.object({
   AUTH_RATE_LIMIT_MAX: z.string().transform(Number).default('5'),
   SENSITIVE_RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('3600000'),
   SENSITIVE_RATE_LIMIT_MAX: z.string().transform(Number).default('10'),
+  PAYMENT_RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('900000'),
+  PAYMENT_RATE_LIMIT_MAX: z.string().transform(Number).default('30'),
   JWT_SECRET: z.string().min(32, 'JWT secret must be at least 32 characters'),
 });
 

@@ -12,7 +12,7 @@ datasources:
       tracesToLogs:
         datasourceUid: 'loki'
         tags: ['job', 'instance', 'pod', 'namespace']
-        mappedTags: [{ key: 'service.name', value: 'app' }]
+        mappedTags: [{ key: 'service.name', value: 'docucomp' }]
         mapTagNamesEnabled: false
         spanStartTimeShift: '1h'
         spanEndTimeShift: '1h'

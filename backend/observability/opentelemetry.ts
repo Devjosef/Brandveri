@@ -20,11 +20,13 @@ class OpenTelemetryService {
 
     this.sdk = new NodeSDK({
       resource: new Resource({
-        'service.name': 'brandveri-api',
+        'service.name': process.env.OTEL_SERVICE_NAME || 'Brandveri',
         'service.version': process.env.npm_package_version,
         'deployment.environment': env.NODE_ENV,
-        'service.namespace': 'docucomp',
+        'service.namespace': 'Brandveri',
         'host.name': process.env.HOSTNAME,
+        'telemetry.sdk.name': 'opentelemetry',
+        'telemetry.sdk.language': 'nodejs',
       }),
       spanProcessor: new BatchSpanProcessor(traceExporter),
       instrumentations: [

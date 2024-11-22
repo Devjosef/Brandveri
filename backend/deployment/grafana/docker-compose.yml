@@ -15,6 +15,11 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
 
   alertmanager:
     image: prom/alertmanager:v0.25.0
@@ -25,6 +30,11 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
 
   loki:
     image: grafana/loki:2.9.0
@@ -37,6 +47,11 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
 
   grafana:
     image: grafana/grafana:latest
@@ -57,6 +72,11 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
 
   otel-collector:
     image: otel/opentelemetry-collector:latest
@@ -69,6 +89,11 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
 
   jaeger:
     image: jaegertracing/all-in-one:latest
@@ -78,6 +103,11 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
 
   redis-exporter:
     image: oliver006/redis_exporter:latest
@@ -88,6 +118,11 @@ services:
     networks:
       - monitoring
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
 
 networks:
   monitoring:

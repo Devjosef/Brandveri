@@ -3,27 +3,46 @@ receivers:
     protocols:
       http:
         endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins: ["*"]
+          allowed_headers: ["*"]
 
 processors:
   batch:
     timeout: 1s
     send_batch_size: 1024
+  attributes:
+    actions:
+      - key: environment
+        value: ${OTEL_ENVIRONMENT}
+        action: insert
+      - key: service.namespace
+        value: ${OTEL_SERVICE_NAMESPACE}
+        action: insert
 
 exporters:
   jaeger:
-    endpoint: jaeger:14250
+    endpoint: ${JAEGER_COLLECTOR_ENDPOINT}
     tls:
       insecure: true
   prometheus:
-    endpoint: "0.0.0.0:8889"
+    endpoint: "0.0.0.0:${PROMETHEUS_PORT}"
+    namespace: ${PROMETHEUS_NAMESPACE}
+    const_labels:
+      environment: ${OTEL_ENVIRONMENT}
+  logging:
+    loglevel: debug
 
 service:
+  telemetry:
+    logs:
+      level: info
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [batch, attributes]
       exporters: [jaeger]
     metrics:
       receivers: [otlp]
-      processors: [batch]
+      processors: [batch, attributes]
       exporters: [prometheus]

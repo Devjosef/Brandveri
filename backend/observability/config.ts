@@ -1,6 +1,7 @@
 import { LoggerOptions } from 'pino';
 import { z } from 'zod';
 import { TransportChain } from '../observability/transportChain';
+import { env } from './envlogger';
 
 const transportSchema = z.object({
   target: z.string(),
@@ -39,9 +40,9 @@ export class LoggerConfiguration {
       type: 'loki',
       priority: 1,
       options: {
-        host: process.env.LOKI_HOST,
-        port: process.env.LOKI_PORT,
-        labels: { app: 'docucomp' }
+        host: env.LOKI_HOST,
+        port: env.LOKI_PORT,
+        labels: { app: env.LOKI_APP_LABEL }
       }
     });
 
@@ -50,9 +51,9 @@ export class LoggerConfiguration {
       type: 'file',
       priority: 2,
       options: {
-        path: './logs/app.log',
+        path: env.LOG_FILE_PATH,
         rotate: true,
-        maxSize: '10M'
+        maxSize: env.LOG_FILE_MAX_SIZE
       }
     });
 

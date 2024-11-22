@@ -169,6 +169,25 @@ export const sensitiveOpsLimiter = rateLimit({
   }
 });
 
+export const paymentRateLimiter = rateLimit({
+  windowMs: Config.PAYMENT_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000, // 15 minutes
+  max: Config.PAYMENT_RATE_LIMIT_MAX || 30, // 30 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: customStore,
+  keyGenerator: (req) => {
+    return req.ip + ':' + (req.body?.customerId || 'anonymous');
+  },
+  handler: (_req: Request, res: Response) => {
+    rateLimitMetrics.exceeded.inc({ limiter_type: 'payment' });
+    res.status(429).json({
+      status: 'error',
+      code: 'PAYMENT_RATE_LIMIT_EXCEEDED',
+      message: 'Too many payment requests, please try again later'
+    });
+  }
+});
+
 // Export for testing purposes
 export const __testing__ = {
   clearStore: () => rateLimitStore.clear(),
