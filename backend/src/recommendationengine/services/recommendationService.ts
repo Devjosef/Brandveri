@@ -1,61 +1,92 @@
 import { Recommendation, RecommendationRequest, RecommendationResponse, UserPreference } from '../../../types/recommendationEngine';
-import { getCache, setCache } from '../../utils/cache';
-import { recommendationDAL } from '../data/recommendationDAL'
+import { cacheService } from '../../utils/cache';
+import { recommendationDAL } from '../data/recommendationDAL';
+import { 
+    recommendationSchema, 
+    getBrandRecommendations, 
+    calculateComplexityScore, 
+    sanitizeInput 
+} from '../utils/helperFunctions';
+import { loggers } from '../../../observability/contextLoggers';
+
+const logger = loggers.recommendation;
 
 class RecommendationService {
-    /**
-     * Retrieves recommendations based on user preferences.
-     * @param request - The recommendation request object from the client.
-     * @returns A recommendation response with filtered suggestions.
-     */
     public async getRecommendations(request: RecommendationRequest): Promise<RecommendationResponse> {
         try {
-            const cacheKey = `recommendations:${request.userId}`;
+            const validatedRequest = recommendationSchema.parse(request);
+            const { userId, keywords, industry } = validatedRequest;
 
-            // Check cache first
+            const cacheKey = `recommendations:${userId ?? 'default'}:${industry}`;
+            logger.info({ cacheKey, industry }, 'Fetching recommendations');
+
             const cachedData = await getCache(cacheKey);
             if (cachedData) {
+                logger.info({ cacheKey }, 'Serving recommendations from cache');
                 return { recommendations: cachedData };
             }
 
-            const userPreferences: UserPreference | null = await this.getUserPreferences(request.userId);
+            const userPreferences = await this.getUserPreferences(userId || '');
+            const brandNames = await recommendationDAL.generateBrandNames();
 
-            if (!userPreferences) {
-                console.warn(`User preferences not found for userId: ${request.userId}`);
-                const defaultRecommendations = await recommendationDAL.getRecommendations();
-                await setCache(cacheKey, defaultRecommendations); // Cache default recommendations
-                return { recommendations: defaultRecommendations };
+            const baseRecommendations = brandNames.map(name => ({
+                name,
+                score: calculateComplexityScore(keywords),
+                industry
+            }));
+
+            const recommendations = userPreferences
+                ? this.filterRecommendations(userPreferences, baseRecommendations)
+                : baseRecommendations;
+
+            if (keywords.length > 0) {
+                const complexityScore = calculateComplexityScore(keywords);
+                logger.info({ complexityScore, keywords }, 'Fetching AI suggestions');
+
+                if (complexityScore <= 10) {
+                    const aiSuggestions = await getBrandRecommendations(
+                        `Generate brand names for ${industry} industry with keywords: ${keywords.join(', ')}`
+                    );
+
+                    recommendations.push(...aiSuggestions.map(name => ({
+                        name,
+                        score: complexityScore,
+                        industry
+                    })));
+                } else {
+                    logger.warn({ complexityScore }, 'Skipping AI suggestions due to high complexity');
+                }
             }
 
-            const allRecommendations = await recommendationDAL.getRecommendations();
-            const filteredRecommendations = this.filterRecommendations(userPreferences, allRecommendations);
+            await setCache(cacheKey, recommendations);
+            return { recommendations };
 
-            // Cache the filtered recommendations
-            await setCache(cacheKey, filteredRecommendations);
-
-            return { recommendations: filteredRecommendations };
         } catch (error) {
-            console.error('Error in RecommendationService.getRecommendations:', error);
-            throw new Error('Failed to fetch recommendations. Please try again later.');
+            logger.error({ error }, 'Failed to generate recommendations');
+            throw new Error('Failed to generate recommendations. Please try again later.');
         }
     }
 
-    getUserPreferences(_userId: string): UserPreference | PromiseLike<UserPreference | null> | null {
-        throw new Error('Method not implemented.');
+    public async getUserPreferences(userId: string): Promise<UserPreference | null> {
+        logger.info({ userId }, 'Fetching user preferences');
+        return userId ? { interests: ['technology', 'finance'] } : null;
     }
 
-    /**
-     * Filters recommendations based on user preferences.
-     * @param userPreferences - The user's preferences containing interests.
-     * @param recommendations - The list of all recommendations.
-     * @returns A filtered list of recommendations that match the user's interests.
-     */
-    private filterRecommendations(userPreferences: UserPreference, recommendations: Recommendation[]): Recommendation[] {
+    private filterRecommendations(
+        userPreferences: UserPreference, 
+        recommendations: Recommendation[]
+    ): Recommendation[] {
+        logger.info({ 
+            preferences: userPreferences.interests,
+            totalRecommendations: recommendations.length 
+        }, 'Filtering recommendations');
+
         return recommendations.filter(rec =>
-            userPreferences.interests.some((interest: string) => rec.name.toLowerCase().includes(interest.toLowerCase()))
+            userPreferences.interests.some(interest => 
+                rec.name.toLowerCase().includes(interest.toLowerCase())
+            )
         );
     }
 }
 
-// Export the service instance
 export const recommendationService = new RecommendationService();
