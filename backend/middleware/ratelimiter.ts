@@ -1,5 +1,5 @@
-import { Request, Response } from 'express';
-import rateLimit, { Store } from 'express-rate-limit';
+import { Request, Response, } from 'express';
+import rateLimit, { Store, RateLimitRequestHandler } from 'express-rate-limit';
 import { Counter, Histogram } from 'prom-client';
 import { LRUCache } from 'lru-cache';
 import { Config } from './index';
@@ -41,11 +41,16 @@ const rateLimitStore = new LRUCache<string, RateLimitStoreData>({
   updateAgeOnHas: true
 });
 
+// Extend the RateLimitRequestHandler type
+interface ExtendedRateLimitRequestHandler extends RateLimitRequestHandler {
+    consume: (key: string) => Promise<void>;
+}
+
 /**
  * Custom rate limiting store implementation using LRU cache
  * @implements {Store}
  */
-const customStore: Store = {
+const customStore: Store & { consume: (key: string) => Promise<void> } = {
   /**
    * Initialize the store and warm it up
    */
@@ -150,6 +155,22 @@ const customStore: Store = {
     } finally {
       timer();
     }
+  },
+
+  async consume(key: string): Promise<void> {
+    const timer = rateLimitMetrics.duration.startTimer({ operation: 'consume' });
+    try {
+      const result = await this.increment(key);
+      if (result.totalHits > Config.SENSITIVE_RATE_LIMIT_MAX) {
+        rateLimitMetrics.exceeded.inc({ limiter_type: 'consume' });
+        throw new Error('RateLimitExceeded');
+      }
+    } catch (error) {
+      console.error('Rate limit consume error:', error);
+      throw error;
+    } finally {
+      timer();
+    }
   }
 };
 
@@ -159,15 +180,7 @@ export const sensitiveOpsLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   store: customStore,
-  handler: (_req: Request, res: Response) => {
-    rateLimitMetrics.exceeded.inc({ limiter_type: 'sensitive_ops' });
-    res.status(429).json({
-      status: 'error',
-      code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Too many requests, please try again later'
-    });
-  }
-});
+}) as ExtendedRateLimitRequestHandler;
 
 export const paymentRateLimiter = rateLimit({
   windowMs: Config.PAYMENT_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000, // 15 minutes

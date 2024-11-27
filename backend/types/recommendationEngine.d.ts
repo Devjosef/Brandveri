@@ -20,11 +20,12 @@ export enum ConfidenceLevel {
 }
 
 export interface UserPreference {
-    userId: string;
-    industries: string[];        // Industry classifications
-    keywords: string[];         // Relevant keywords
-    excludedTerms?: string[];   // Terms to exclude
-    watchlist?: string[];       // Specific terms to monitor
+    interests: string[];         // Required field
+    userId?: string;            // Optional fields
+    industries?: string[];
+    keywords?: string[];
+    excludedTerms?: string[];
+    watchlist?: string[];
     notificationThreshold?: ConfidenceLevel;
 }
 
@@ -35,23 +36,34 @@ export interface SimilarityScore {
     factors: string[];          // Factors contributing to score
 }
 
-export interface Recommendation {
-    id: string;
-    type: RecommendationType;
-    targetMark: string;         // The trademark being analyzed
-    similarMark: string;        // The similar trademark found
-    score: SimilarityScore;
-    priority: 'high' | 'medium' | 'low';
-    created: Date;
-    status: RecommendationStatus;
-    metadata?: Record<string, unknown>;
+
+// Base recommendation with minimal required properties
+export interface BaseRecommendation {
+    name: string;
+    score: number;
+    industry: string;
 }
 
-export enum RecommendationType {
-    POTENTIAL_INFRINGEMENT = 'potential_infringement',
-    SIMILAR_MARK = 'similar_mark',
-    WATCH_LIST_MATCH = 'watch_list_match',
-    INDUSTRY_ALERT = 'industry_alert'
+// Extended recommendation with optional metadata
+export interface Recommendation extends BaseRecommendation {
+    id?: string;
+    created?: Date;
+    source?: 'AI' | 'GENERATION';
+    keywords?: string[];
+}
+
+// Specific interface for brand name recommendations
+export interface BrandRecommendation extends Recommendation {
+    type: 'BRAND_SUGGESTION';
+}
+
+// Original trademark similarity recommendation
+export interface TrademarkRecommendation extends Recommendation {
+    type: 'TRADEMARK_SIMILARITY';
+    targetMark: string;
+    similarMark: string;
+    similarityScore: SimilarityScore;
+    status: RecommendationStatus;
 }
 
 export enum RecommendationStatus {
@@ -84,7 +96,6 @@ export interface RecommendationResponse {
         totalResults: number;
         processedAt: Date;
         executionTimeMs: number;
-        nextUpdate?: Date;
     };
 }
 
