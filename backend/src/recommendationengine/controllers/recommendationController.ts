@@ -1,51 +1,152 @@
 import { Request, Response } from 'express';
 import { recommendationService } from '../services/recommendationService';
-import { RecommendationRequest } from '../../../types/recommendationEngine'
-import { validateRecommendationInput } from '../utils/helperFunctions';
+import { loggers } from '../../../observability/contextLoggers';
+import { recommendationSchema } from '../utils/helperFunctions';
+import { RecommendationError, CacheError } from '../data/recommendationDAL';
+import { Counter, Histogram } from 'prom-client';
+import crypto from 'crypto';
+import { validatePayloadSize, sanitizeRequest } from '../utils/requestValidators';
+import { CircuitBreaker } from '../utils/circuitBreaker';
+import { RequestContext } from '../utils/requestContext';
+import { RecommendationRequest } from '../../../types/recommendationEngine';
+
+const MAX_PAYLOAD_SIZE = 1024 * 100; // 100KB
+const REQUEST_TIMEOUT = 30000; // 30 seconds
+
+const controllerBreaker = new CircuitBreaker('controller', {
+    failureThreshold: 5,
+    resetTimeout: 60000
+});
+
+const logger = loggers.recommendation;
+
+const controllerMetrics = {
+    requestDuration: new Histogram({
+        name: 'recommendation_http_duration_seconds',
+        help: 'Duration of HTTP recommendation requests',
+        labelNames: ['status'],
+        buckets: [0.1, 0.5, 1, 2, 5]
+    }),
+    requests: new Counter({
+        name: 'recommendation_http_requests_total',
+        help: 'Total number of HTTP recommendation requests',
+        labelNames: ['status', 'error_type']
+    })
+};
 
 /**
- * RecommendationController class handles recommendation-related requests.
+ * Handles HTTP layer for recommendation requests
+ * - Separates HTTP concerns from business logic.
+ * - Provides consistent error handling and response formatting.
+ * - Enables request-level metrics collection.
  */
 class RecommendationController {
     /**
-     * Retrieves recommendations based on user preferences.
-     * @param req - Express request object.
-     * @param res - Express response object.
+     * Processes recommendation requests
+     * - Handles long-running service operations without blocking.
+     * - Properly propagates errors from service layer.
+     * - Maintains connection stability.
      */
     public async getRecommendations(req: Request, res: Response): Promise<void> {
-        try {
-            // Validate input before passing to the service layer
-            const { industry, keywords } = req.body as RecommendationRequest;
-            if (!validateRecommendationInput(industry, keywords)) {
-                res.status(400).json({ error: 'Invalid input. Ensure industry and keywords are correctly provided.' });
-                return;
-            }
+        const correlationId = crypto.randomUUID();
+        const timer = controllerMetrics.requestDuration.startTimer();
+        const context = new RequestContext(correlationId);
 
-            // Call the service to get recommendations
-            const response = await recommendationService.getRecommendations({
-                industry, keywords,
-                userId: ''
+        // Set security headers
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('X-Correlation-ID', correlationId);
+
+        try {
+            // Validate request size and structure
+            validatePayloadSize(req, MAX_PAYLOAD_SIZE);
+            const sanitizedBody = sanitizeRequest(req.body);
+
+            // Set request timeout
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Request timeout')), REQUEST_TIMEOUT);
             });
+
+            const validatedRequest = await Promise.race([
+                recommendationSchema.parseAsync({
+                    ...sanitizedBody,
+                    userId: req.user?.id ?? '',
+                    trademarkId: (sanitizedBody as Partial<RecommendationRequest>).trademarkId || correlationId
+                }) as Promise<RecommendationRequest>,
+                timeoutPromise
+            ]) as RecommendationRequest;
+
+            const response = await controllerBreaker.execute(() => 
+                recommendationService.getRecommendations(validatedRequest)
+            );
+
+            controllerMetrics.requests.inc({ status: 'success' });
+            timer({ status: 'success' });
+
             res.status(200).json({
                 success: true,
                 data: response,
-                message: 'Recommendations fetched successfully.',
+                metadata: {
+                    processedAt: new Date().toISOString(),
+                    requestId: validatedRequest.trademarkId,
+                    totalResults: response.recommendations.length
+                }
             });
-        } catch (error: any) {
-            console.error('Error in RecommendationController.getRecommendations:', error.message || error);
+        } catch (err) {
+            const error = err instanceof Error ? err : new Error('Unknown error occurred');
+            
+            logger.error({ 
+                error: error.message,
+                stack: error.stack,
+                correlationId,
+                requestSize: req.get('content-length'),
+                path: req.path
+            }, 'Recommendation request failed');
 
-            // Differentiating between different errors for more informative responses
-            if (error.name === 'ValidationError') {
-                res.status(400).json({ error: error.message });
-            } else {
-                res.status(500).json({ error: 'An internal server error occurred while fetching recommendations.' });
+            timer({ status: 'error' });
+
+            // Handle specific error types from the service layer.
+            if (error.name === 'ZodError') {
+                controllerMetrics.requests.inc({ status: 'error', error_type: 'validation' });
+                res.status(400).json({
+                    success: false,
+                    error: 'Validation failed',
+                    details: error.message
+                });
+                return;
             }
+
+            if (error instanceof RecommendationError) {
+                controllerMetrics.requests.inc({ status: 'error', error_type: 'business' });
+                res.status(422).json({
+                    success: false,
+                    error: 'Processing failed',
+                    message: error.message
+                });
+                return;
+            }
+
+            if (error instanceof CacheError) {
+                controllerMetrics.requests.inc({ status: 'error', error_type: 'cache' });
+                // Don't expose cache errors to client
+                res.status(503).json({
+                    success: false,
+                    error: 'Service temporarily unavailable',
+                    message: 'Please try again later'
+                });
+                return;
+            }
+
+            controllerMetrics.requests.inc({ status: 'error', error_type: 'internal' });
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error',
+                message: 'An unexpected error occurred'
+            });
+        } finally {
+            context.clear();
         }
     }
 }
 
-// Instantiate the controller
-const recommendationController = new RecommendationController();
-
-// Export the controller
-export default recommendationController;
+export default new RecommendationController();

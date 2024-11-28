@@ -57,5 +57,5 @@ export class CircuitBreaker {
     }
 }
 
-  // Prevents overwhelming the api during issues, provides fast failure when service is degraded.
+  // Prevents overwhelming the API during issues, provides fast failure when service is degraded.
   // Allows system to recover gracefully

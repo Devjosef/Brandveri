@@ -66,9 +66,8 @@ class RecommendationService {
     public async getRecommendations(request: RecommendationRequest): Promise<RecommendationResponse> {
         const startTime = Date.now();
         try {
-            // Validates the request by userid keywords and industry.
             const validatedRequest = recommendationSchema.parse(request);
-            const { userId, keywords, industry } = validatedRequest;
+            const { userId, keywords = [], industry = '' } = validatedRequest;
 
             const cacheKey = `recommendations:${userId ?? 'default'}:${industry}`;
             logger.info({ cacheKey, industry, keywords }, 'Attempting to fetch recommendations');

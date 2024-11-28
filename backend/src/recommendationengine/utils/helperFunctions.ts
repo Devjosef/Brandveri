@@ -4,6 +4,7 @@ import { loggers } from '../../../observability/contextLoggers';
 import axios from 'axios';
 import { CircuitBreaker } from '../utils/circuitBreaker';
 import { invariant } from '../utils/invariant'
+import { SimilarityMethod } from '../../../types/recommendationEngine';
 
 const logger = loggers.recommendation;
 
@@ -14,15 +15,26 @@ const openAIBreaker = new CircuitBreaker('openai', {
 
 // Provides type-safe validation with proper error messages
 export const recommendationSchema = z.object({
-  industry: z.string()
-    .min(2)
-    .max(100)
-    .transform(val => sanitizeInput(val)),
-  keywords: z.array(z.string())
-    .min(1)
-    .max(10)
-    .transform(keywords => keywords.map(sanitizeInput)),
-  userId: z.string().optional()
+  userId: z.string(),
+  trademarkId: z.string(),
+  keywords: z.array(z.string()).optional(),
+  industry: z.string().optional(),
+  context: z.object({
+    industry: z.array(z.string())
+      .min(1)
+      .transform(industries => industries.map(sanitizeInput)),
+    territory: z.array(z.string())
+      .min(1)
+      .transform(territories => territories.map(sanitizeInput)),
+    searchType: z.array(z.nativeEnum(SimilarityMethod)),
+    minConfidence: z.number().min(0).max(1).optional()
+  }),
+  options: z.object({
+    includePending: z.boolean().optional(),
+    includeHistorical: z.boolean().optional(),
+    limit: z.number().min(1).max(100).optional(),
+    offset: z.number().min(0).optional()
+  }).optional()
 });
 
 // Reuse of existing sanitization logic
