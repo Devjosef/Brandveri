@@ -1,8 +1,8 @@
 import express, { Request, Response, NextFunction } from 'express';
 import recommendationController from '../controllers/recommendationController';
-import { rateLimiter, corsMiddleware } from '../../../middleware/ratelimiter';
-import { validateApiKey } from '../../../middleware/auth';
-import { asyncHandler } from '../../../utils/errorHandlers';
+import { sensitiveOpsLimiter, } from '../../../middleware/ratelimiter';
+import { authenticateToken } from '../../../middleware/auth';
+import { AsyncLock } from '../utils/asyncLock';
 import { loggers } from '../../../observability/contextLoggers';
 import { Counter } from 'prom-client';
 
@@ -41,17 +41,22 @@ const routeMetrics = new Counter({
  */
 router.post('/recommendations', 
     corsMiddleware,
-    validateApiKey,
-    rateLimiter,
-    asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-        routeMetrics.inc({ method: 'POST', path: '/recommendations' });
-        
-        // Set security headers
-        res.setHeader('Cache-Control', 'no-store');
-        res.setHeader('Pragma', 'no-cache');
-        
-        await recommendationController.getRecommendations(req, res);
-    })
+    authenticateToken,
+    sensitiveOpsLimiter,
+    async (req: Request, res: Response, _next: NextFunction) => {
+        const asyncLock = new AsyncLock();
+        try {
+            await asyncLock.acquire('recommendations');
+            routeMetrics.inc({ method: 'POST', path: '/recommendations' });
+            
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('Pragma', 'no-cache');
+            
+            await recommendationController.getRecommendations(req, res);
+        } finally {
+            asyncLock.release('recommendations');
+        }
+    }
 );
 
 /**
@@ -65,7 +70,7 @@ router.post('/recommendations',
  *       200:
  *         description: Service is healthy
  */
-router.get('/health', (req: Request, res: Response) => {
+router.get('/health', (_req: Request, res: Response) => {
     routeMetrics.inc({ method: 'GET', path: '/health' });
     res.status(200).json({ status: 'healthy' });
 });
