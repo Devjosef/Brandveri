@@ -5,7 +5,7 @@ import { RecommendationRequest, RecommendationResponse, Recommendation, UserPref
 import { recommendationDAL, RecommendationError } from '../data/recommendationDAL';
 import { Histogram, Counter } from 'prom-client';
 import { sensitiveOpsLimiter } from '../../../middleware/ratelimiter';
-import { invariant } from '../utils/invariant';
+import { invariant } from '../../utils/invariant';
 
 const logger = loggers.recommendation;
 

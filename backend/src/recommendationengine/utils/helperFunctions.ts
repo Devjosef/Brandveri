@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { escape } from 'validator';
 import { loggers } from '../../../observability/contextLoggers';
 import axios from 'axios';
-import { CircuitBreaker } from '../utils/circuitBreaker';
-import { invariant } from '../utils/invariant'
+import { CircuitBreaker } from '../../utils/CircuitBreaker';
+import { invariant } from '../../utils/invariant'
 import { SimilarityMethod } from '../../../types/recommendationEngine';
 
 const logger = loggers.recommendation;

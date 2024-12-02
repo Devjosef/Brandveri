@@ -1,7 +1,7 @@
 import cors, { CorsOptions } from 'cors';
 import { loggers } from '../observability/contextLoggers';
 
-const logger = loggers.middleware;
+const logger = loggers.api;
 
 const corsOptions: CorsOptions = {
     origin: (origin, callback) => {

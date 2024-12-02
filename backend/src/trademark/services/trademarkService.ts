@@ -9,6 +9,8 @@ import { formatTrademarkResponse } from '../utils/responseFormatter';
 import { TrademarkError } from '../utils/trademarkError';
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { serviceConfig } from '../../utils/env';
+import { AsyncLock } from '../../utils/AsyncLock';
+
 
 // Metrics for trademark operations
 const trademarkMetrics = {
@@ -35,6 +37,7 @@ class TrademarkService {
   private readonly cache: Cache;
   private readonly usptoClient: AxiosInstance;
   private readonly euipoClient: AxiosInstance;
+  private readonly asyncLock: AsyncLock;
 
   constructor() {
     this.cache = new Cache();
@@ -52,6 +55,8 @@ class TrademarkService {
       timeout: 5000,
       headers: { 'X-API-Key': config.euipo.key }
     });
+
+    this.asyncLock = new AsyncLock();
 
     this.setupAxiosInterceptors();
   }
@@ -92,71 +97,76 @@ class TrademarkService {
   }
 
   async searchTrademark(params: Readonly<TrademarkSearchParams>): Promise<TrademarkResponse> {
-    const timer = trademarkMetrics.searchDuration.startTimer();
-    const jurisdiction = params.jurisdiction?.join(',') || 'all';
-    
+    await this.asyncLock.acquire('trademark-search');
     try {
-      trademarkMetrics.operations.inc({ 
-        operation: 'search', 
-        status: 'attempt',
-        jurisdiction
-      });
-
-      const normalizedParams = {
-        ...params,
-        query: normalizeTrademarkQuery(params.query || '')
-      };
-
-      const cacheKey = generateSearchCacheKey(normalizedParams);
-      const cachedResult = await this.cache.get<TrademarkResponse>(cacheKey);
+      const timer = trademarkMetrics.searchDuration.startTimer();
+      const jurisdiction = params.jurisdiction?.join(',') || 'all';
       
-      if (cachedResult) {
+      try {
         trademarkMetrics.operations.inc({ 
           operation: 'search', 
-          status: 'cache_hit',
+          status: 'attempt',
           jurisdiction
         });
-        return cachedResult;
+
+        const normalizedParams = {
+          ...params,
+          query: normalizeTrademarkQuery(params.query || '')
+        };
+
+        const cacheKey = generateSearchCacheKey(normalizedParams);
+        const cachedResult = await this.cache.get<TrademarkResponse>(cacheKey);
+        
+        if (cachedResult) {
+          trademarkMetrics.operations.inc({ 
+            operation: 'search', 
+            status: 'cache_hit',
+            jurisdiction
+          });
+          return cachedResult;
+        }
+
+        const results = await this.searchAllRegistries(normalizedParams);
+        const formattedResults: Trademark = {
+          id: crypto.randomUUID(),
+          name: normalizedParams.query,
+          status: 'ACTIVE',
+          applicationNumber: '',
+          registrationNumber: '',
+          filingDate: new Date(),
+          registrationDate: null,
+          expirationDate: null,
+          owner: {
+            name: '',
+            address: ''
+          },
+          results
+        };
+
+        const response = formatTrademarkResponse(formattedResults);
+        
+        await this.cache.set(cacheKey, response, { service: 'trademark' });
+        
+        trademarkMetrics.operations.inc({ 
+          operation: 'search', 
+          status: 'success',
+          jurisdiction
+        });
+
+        return response;
+
+      } catch (error) {
+        trademarkMetrics.operations.inc({ 
+          operation: 'search', 
+          status: 'error',
+          jurisdiction
+        });
+        throw TrademarkError.fromUnknown(error);
+      } finally {
+        timer();
       }
-
-      const results = await this.searchAllRegistries(normalizedParams);
-      const formattedResults: Trademark = {
-        id: crypto.randomUUID(),
-        name: normalizedParams.query,
-        status: 'ACTIVE',
-        applicationNumber: '',
-        registrationNumber: '',
-        filingDate: new Date(),
-        registrationDate: null,
-        expirationDate: null,
-        owner: {
-          name: '',
-          address: ''
-        },
-        results
-      };
-
-      const response = formatTrademarkResponse(formattedResults);
-      
-      await this.cache.set(cacheKey, response, { service: 'trademark' });
-      
-      trademarkMetrics.operations.inc({ 
-        operation: 'search', 
-        status: 'success',
-        jurisdiction
-      });
-
-      return response;
-
-    } catch (error) {
-      trademarkMetrics.operations.inc({ 
-        operation: 'search', 
-        status: 'error',
-        jurisdiction
-      });
-      throw TrademarkError.fromUnknown(error);
     } finally {
-      timer();
+      this.asyncLock.release('trademark-search');
     }
   }
 

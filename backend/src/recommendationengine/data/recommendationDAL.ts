@@ -1,8 +1,8 @@
 import { Counter, Histogram } from 'prom-client';
 import { loggers } from '../../../observability/contextLoggers';
 import { cacheService } from '../../utils/cache';
-import { CircuitBreaker } from '../utils/circuitBreaker';
-import { AsyncLock } from '../utils/asyncLock';
+import { CircuitBreaker } from '../../utils/CircuitBreaker';
+import { AsyncLock } from '../../utils/AsyncLock';
 
 const logger = loggers.recommendation;
 
