@@ -61,7 +61,35 @@ export const loggers = {
   database: loggerRegistry.getLogger({ context: 'database' }),
   api: loggerRegistry.getLogger({ context: 'api' }),
   payment: loggerRegistry.getLogger({ context: 'payment' }),
-  recommendation: loggerRegistry.getLogger({ context: 'recommendation' })
+  recommendation: loggerRegistry.getLogger({ context: 'recommendation' }),
+  system: loggerRegistry.getLogger({ 
+    context: 'system',
+    metadata: { 
+      type: 'system',
+      component: 'core'
+    }
+  }),
+  invariant: loggerRegistry.getLogger({ 
+    context: 'invariant',
+    metadata: { 
+      type: 'verification',
+      component: 'assertions'
+    }
+  }),
+  metrics: loggerRegistry.getLogger({ 
+    context: 'metrics',
+    metadata: { 
+      type: 'monitoring',
+      component: 'prometheus'
+    }
+  }),
+  validation: loggerRegistry.getLogger({ 
+    context: 'validation',
+    metadata: { 
+      type: 'data',
+      component: 'schema'
+    }
+  })
 } as const;
 
 export type LogContext = keyof typeof loggers;

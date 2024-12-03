@@ -1,16 +1,24 @@
+import https from 'https';
+import { URL } from 'url';
 import { 
   Trademark, 
   TrademarkSearchParams, 
-  TrademarkResponse,} from '../../../types/trademark';
+  TrademarkResponse,
+  TrademarkStatus,
+  TrademarkErrorCode
+} from '../../../types/trademark';
 import { Counter, Histogram } from 'prom-client';
 import { Cache } from '../../utils/cache';
 import { generateSearchCacheKey, normalizeTrademarkQuery } from '../utils/trademarkUtils';
 import { formatTrademarkResponse } from '../utils/responseFormatter';
 import { TrademarkError } from '../utils/trademarkError';
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { serviceConfig } from '../../utils/env';
+import { config, featureFlags } from '../utils/validation';
 import { AsyncLock } from '../../utils/AsyncLock';
+import { loggers } from '../../../observability/contextLoggers';
 
+
+const logger = loggers.trademark;
 
 // Metrics for trademark operations
 const trademarkMetrics = {
@@ -42,18 +50,18 @@ class TrademarkService {
   constructor() {
     this.cache = new Cache();
     
-    const { trademark: config } = serviceConfig;
+    const trademarkConfig = config.TRADEMARK;
     
     this.usptoClient = axios.create({
-      baseURL: config.uspto.url,
+      baseURL: trademarkConfig.uspto.url,
       timeout: 5000,
-      headers: { 'X-API-Key': config.uspto.key }
+      headers: { 'X-API-Key': trademarkConfig.uspto.key }
     });
 
     this.euipoClient = axios.create({
-      baseURL: config.euipo.url,
+      baseURL: trademarkConfig.euipo.url,
       timeout: 5000,
-      headers: { 'X-API-Key': config.euipo.key }
+      headers: { 'X-API-Key': trademarkConfig.euipo.key }
     });
 
     this.asyncLock = new AsyncLock();
@@ -87,6 +95,7 @@ class TrademarkService {
               duration
             );
           }
+          logger.error({ error, api: apiName }, 'API call failed');
           throw error;
         }
       );
@@ -97,7 +106,9 @@ class TrademarkService {
   }
 
   async searchTrademark(params: Readonly<TrademarkSearchParams>): Promise<TrademarkResponse> {
+    const searchPromises: Promise<Trademark[]>[] = [];
     await this.asyncLock.acquire('trademark-search');
+    
     try {
       const timer = trademarkMetrics.searchDuration.startTimer();
       const jurisdiction = params.jurisdiction?.join(',') || 'all';
@@ -126,26 +137,47 @@ class TrademarkService {
           return cachedResult;
         }
 
-        const results = await this.searchAllRegistries(normalizedParams);
+        let trademarkResults: Trademark[] = [];
+
+        // Use searchPromises for concurrent registry searches
+        if (featureFlags.TRADEMARK.ENABLE_CONCURRENT_SEARCH) {
+          const jurisdictions = params.jurisdiction || ['USPTO', 'EUIPO'];
+          jurisdictions.forEach(j => {
+            if (j === 'USPTO') searchPromises.push(this.searchUSPTO(normalizedParams));
+            if (j === 'EUIPO') searchPromises.push(this.searchEUIPO(normalizedParams));
+          });
+          const searchResults = await Promise.all(searchPromises);
+          trademarkResults = searchResults.flat();
+        } else {
+          trademarkResults = await this.searchAllRegistries(normalizedParams);
+        }
+
         const formattedResults: Trademark = {
           id: crypto.randomUUID(),
           name: normalizedParams.query,
-          status: 'ACTIVE',
+          status: TrademarkStatus.PENDING,
           applicationNumber: '',
           registrationNumber: '',
           filingDate: new Date(),
-          registrationDate: null,
-          expirationDate: null,
+          registrationDate: new Date(),
+          expiryDate: new Date(),
           owner: {
             name: '',
-            address: ''
+            address: '',
+            type: 'individual'
           },
-          results
+          niceClasses: normalizedParams.niceClasses || [],
+          jurisdiction: normalizedParams.jurisdiction?.[0] || 'USPTO',
+          description: '',
+          goods_services: trademarkResults.map(r => r.name),
+          lastUpdated: new Date()
         };
 
         const response = formatTrademarkResponse(formattedResults);
         
-        await this.cache.set(cacheKey, response, { service: 'trademark' });
+        await this.cache.set(cacheKey, response, { 
+          ttl: config.TRADEMARK.CACHE_TTL
+        });
         
         trademarkMetrics.operations.inc({ 
           operation: 'search', 
@@ -161,6 +193,7 @@ class TrademarkService {
           status: 'error',
           jurisdiction
         });
+        logger.error({ error, jurisdiction }, 'Trademark search failed');
         throw TrademarkError.fromUnknown(error);
       } finally {
         timer();
@@ -174,14 +207,12 @@ class TrademarkService {
     const searchPromises: Promise<Trademark[]>[] = [];
     const jurisdictions = params.jurisdiction || ['USPTO', 'EUIPO'];
     
-    const searchFunctions = {
-      USPTO: () => this.searchUSPTO(params),
-      EUIPO: () => this.searchEUIPO(params)
-    };
+    jurisdictions.forEach(j => {
+      if (j === 'USPTO') searchPromises.push(this.searchUSPTO(params));
+      if (j === 'EUIPO') searchPromises.push(this.searchEUIPO(params));
+    });
 
-    const results = await Promise.allSettled(
-      jurisdictions.map(j => searchFunctions[j]())
-    );
+    const results = await Promise.allSettled(searchPromises);
 
     return results
       .filter((result): result is PromiseFulfilledResult<Trademark[]> => 
@@ -191,20 +222,68 @@ class TrademarkService {
       .flat();
   }
 
+  private async makeHttpRequest(url: string, options: https.RequestOptions): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const urlObj = new URL(url);
+      const requestOptions = {
+        ...options,
+        hostname: urlObj.hostname,
+        path: urlObj.pathname + urlObj.search,
+        timeout: 5000,
+      };
+
+      const req = https.request(requestOptions, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(new TrademarkError(
+              TrademarkErrorCode.API_ERROR,
+              'Invalid JSON response'
+            ));
+          }
+        });
+      });
+
+      req.on('error', (error) => {
+        reject(new TrademarkError(
+          TrademarkErrorCode.API_ERROR,
+          'HTTP request failed',
+          error
+        ));
+      });
+
+      req.on('timeout', () => {
+        req.destroy();
+        reject(new TrademarkError(
+          TrademarkErrorCode.API_ERROR,
+          'Request timeout'
+        ));
+      });
+
+      req.end();
+    });
+  }
+
   private async searchUSPTO(params: TrademarkSearchParams): Promise<Trademark[]> {
     try {
-      const response = await this.usptoClient.get('/trademarks/search', {
-        params: {
-          q: params.q,
-          classes: params.niceClasses?.join(','),
-          page: params.page,
-          limit: params.limit
+      const response = await this.makeHttpRequest(
+        `${config.TRADEMARK.uspto.url}/trademarks/search`,
+        {
+          method: 'GET',
+          headers: {
+            'X-API-Key': config.TRADEMARK.uspto.key,
+            'Accept': 'application/json'
+          }
         }
-      });
-      return response.data;
+      );
+      return response;
     } catch (error) {
+      logger.error({ error, params }, 'USPTO search failed');
       throw new TrademarkError(
-        'USPTO_SEARCH_ERROR',
+        TrademarkErrorCode.API_ERROR,
         'Failed to search USPTO trademarks',
         error
       );
@@ -215,7 +294,7 @@ class TrademarkService {
     try {
       const response = await this.euipoClient.get('/trademarks/search', {
         params: {
-          query: params.q,
+          query: params.query,
           nice_classes: params.niceClasses?.join(','),
           page: params.page,
           per_page: params.limit
@@ -223,8 +302,9 @@ class TrademarkService {
       });
       return response.data;
     } catch (error) {
+      logger.error({ error, params }, 'EUIPO search failed');
       throw new TrademarkError(
-        'EUIPO_SEARCH_ERROR',
+        TrademarkErrorCode.API_ERROR,
         'Failed to search EUIPO trademarks',
         error
       );

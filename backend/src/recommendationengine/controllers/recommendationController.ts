@@ -6,7 +6,7 @@ import { RecommendationError, CacheError } from '../data/recommendationDAL';
 import { Counter, Histogram } from 'prom-client';
 import crypto from 'crypto';
 import { validatePayloadSize, sanitizeRequest } from '../../utils/requestValidators';
-import { CircuitBreaker } from '../../utils/circuitBreaker';
+import { CircuitBreaker } from '../../utils/CircuitBreaker';
 import { RequestContext } from '../../utils/requestContext';
 import { RecommendationRequest } from '../../../types/recommendationEngine';
 

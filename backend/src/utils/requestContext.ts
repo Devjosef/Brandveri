@@ -15,6 +15,10 @@ interface RequestContextData {
         ip?: string;
         route?: string;
     };
+    trackingIds?: {
+        correlationId?: string;
+        sessionId?: string;
+    };
 }
 
 // Metrics for monitoring context lifecycle. Usage of gauge: we are tracking both increases and decreases.
