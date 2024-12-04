@@ -1,11 +1,18 @@
-import { Request, Response } from 'express';
+import { Request, Response,} from 'express';
 import { trademarkService } from '../services/trademarkService';
 import { CircuitBreaker } from '../../utils/CircuitBreaker';
-import { validateTrademarkSearch, featureFlags } from '../utils/validation';
+import { 
+    validateTrademarkSearch, 
+    featureFlags,
+} from '../utils/validation';
 import { RequestContext } from '../../utils/requestContext';
 import { Counter, Histogram } from 'prom-client';
 import { loggers } from '../../../observability/contextLoggers';
 import { Invariant } from '../../utils/invariant';
+import { 
+    TrademarkSearchParams, 
+} from '../../../types/trademark';
+import { sensitiveOpsLimiter } from '../../../middleware/ratelimiter';
 
 const logger = loggers.trademark;
 
@@ -32,7 +39,6 @@ export class TrademarkController {
             resetTimeout: 30000
         });
 
-        // Verify controller invariants
         Invariant.assert(
             this.controllerBreaker !== null,
             'Circuit breaker must be initialized'
@@ -41,18 +47,26 @@ export class TrademarkController {
 
     async searchTrademark(req: Request, res: Response): Promise<void> {
         const timer = controllerMetrics.latency.startTimer();
-        const context = new RequestContext(req.headers['x-correlation-id'] as string);
+        const correlationId = req.headers['x-correlation-id'] || crypto.randomUUID();
+        const context = new RequestContext(correlationId.toString());
         
         try {
-            // Rate limiting check based on feature flags
             if (featureFlags.TRADEMARK.ENABLE_RATE_LIMITING) {
-                await this.checkRateLimit(req);
+                const clientIp = req.ip || 'unknown-ip';
+                await sensitiveOpsLimiter.consume(clientIp);
             }
 
-            const validatedParams = await validateTrademarkSearch(req.query);
-            
-            const result = await this.controllerBreaker.execute(() =>
-                trademarkService.searchTrademark(validatedParams)
+            const validationResult = await this.validateSearchParams(req, res);
+            if (!validationResult.success || !validationResult.params) {
+                res.status(400).json({ 
+                    success: false, 
+                    error: 'Invalid search parameters' 
+                });
+                return;
+            }
+
+            const result = await this.controllerBreaker.execute(() => 
+                trademarkService.searchTrademark(validationResult.params!)
             );
 
             controllerMetrics.requests.inc({ 
@@ -76,12 +90,34 @@ export class TrademarkController {
         }
     }
 
-    private async checkRateLimit(_req: Request): Promise<void> {
-        // Implementation based on your rate limiting strategy
-        // This is a placeholder for the actual implementation
-        return Promise.resolve();
+    private async validateSearchParams(req: Request, res: Response): Promise<{ 
+        success: boolean; 
+        params?: TrademarkSearchParams 
+    }> {
+        try {
+            const validatedParams = await validateTrademarkSearch(
+                req.query,
+                res,
+                (err: any) => {
+                    if (err) {
+                        throw new Error('Validation failed');
+                    }
+                }
+            );
+
+            if (!validatedParams) {
+                return { success: false, params: undefined };
+            }
+
+            return { 
+                success: true, 
+                params: validatedParams 
+            };
+        } catch (error) {
+            logger.error({ error, query: req.query }, 'Search parameter validation failed');
+            return { success: false };
+        }
     }
 }
 
-// Export singleton instance
 export const trademarkController = new TrademarkController();

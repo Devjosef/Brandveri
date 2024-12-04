@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { NiceClassification } from '../../../types/trademark';
 import { createValidator } from '../../../middleware/validator';
+import { Response, NextFunction } from 'express';
+import { TrademarkSearchParams } from '../../../types/trademark';
+import { TrademarkStatus } from '../../../types/trademark';
 
 // Feature Flags Schema
 export const FeatureFlagSchema = z.object({
@@ -136,12 +139,12 @@ const TrademarkSchemas = {
         : z.undefined()
 };
 
-// Enhanced search schema with feature flags
-const TrademarkSearchSchema = z.object({
-    q: z.string()
+// Base search query schema for raw request validation
+const BaseSearchQuerySchema = z.object({
+    query: z.string()
         .trim()
         .min(
-            config.TRADEMARK.SEARCH.MIN_QUERY_LENGTH, 
+            config.TRADEMARK.SEARCH.MIN_QUERY_LENGTH,
             `Query must be at least ${config.TRADEMARK.SEARCH.MIN_QUERY_LENGTH} characters`
         )
         .max(
@@ -150,23 +153,41 @@ const TrademarkSearchSchema = z.object({
         )
         .transform(val => val.toLowerCase()),
     
-    niceClasses: TrademarkSchemas.niceClasses.optional(),
-    jurisdiction: TrademarkSchemas.jurisdiction.optional(),
-    
-    page: z.number()
-        .int()
-        .min(1, 'Page must be a positive integer')
+    page: z.string()
         .optional()
-        .default(1),
+        .transform(val => val ? parseInt(val, 10) : 1),
     
-    limit: z.number()
-        .int()
-        .min(1, 'Limit must be at least 1')
-        .max(config.TRADEMARK.SEARCH.MAX_PAGE_SIZE)
+    limit: z.string()
         .optional()
-        .default(config.TRADEMARK.SEARCH.DEFAULT_PAGE_SIZE),
+        .transform(val => val ? 
+            Math.min(parseInt(val, 10), config.TRADEMARK.SEARCH.MAX_PAGE_SIZE) : 
+            config.TRADEMARK.SEARCH.DEFAULT_PAGE_SIZE
+        ),
 
-    // Add optional fields based on feature flags
+    status: z.array(z.nativeEnum(TrademarkStatus))
+        .optional(),
+
+    niceClasses: z.array(z.string())
+        .optional()
+        .transform(val => 
+            val?.map(v => parseInt(v, 10))
+            .filter((v): v is NiceClassification => 
+                Object.values(NiceClassification).includes(v)
+            )
+        ),
+
+    jurisdiction: z.array(z.enum(['USPTO', 'EUIPO'] as const))
+        .optional(),
+
+    sortBy: z.enum(['relevance', 'name', 'registrationDate', 'status', 'owner'])
+        .optional(),
+
+    sortOrder: z.enum(['asc', 'desc'])
+        .optional()
+}).strict();
+
+// Enhanced schema with feature flags
+const FeatureFlagSearchSchema = z.object({
     ...(featureFlags.TRADEMARK.ENABLE_SIMILARITY_CHECK && {
         similarityThreshold: TrademarkSchemas.similarityThreshold
     }),
@@ -174,6 +195,39 @@ const TrademarkSearchSchema = z.object({
         fuzzySearch: TrademarkSchemas.fuzzySearchOptions
     })
 }).strict();
+
+// Combined search schema that matches TrademarkSearchParams
+export const TrademarkSearchSchema = BaseSearchQuerySchema
+    .merge(FeatureFlagSearchSchema)
+    .transform((data): TrademarkSearchParams => ({
+        query: data.query,
+        page: data.page,
+        limit: data.limit,
+        status: data.status,
+        niceClasses: data.niceClasses,
+        jurisdiction: data.jurisdiction,
+        sortBy: data.sortBy,
+        sortOrder: data.sortOrder
+    }));
+
+export const validateTrademarkSearch = async (
+    query: unknown,
+    res: Response,
+    _next: NextFunction
+): Promise<TrademarkSearchParams | null> => {
+    try {
+        return TrademarkSearchSchema.parse(query);
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            res.status(400).json({
+                success: false,
+                error: 'Validation failed',
+                details: error.errors
+            });
+        }
+        return null;
+    }
+};
 
 // Registration validation schema
 const TrademarkRegistrationSchema = z.object({
@@ -187,12 +241,6 @@ const TrademarkRegistrationSchema = z.object({
     description: TrademarkSchemas.description,
     owner: TrademarkSchemas.owner
 }).strict();
-
-// Export validators with metrics
-export const validateTrademarkSearch = createValidator(
-    TrademarkSearchSchema,
-    'trademark_search'
-);
 
 export const validateTrademarkRegistration = createValidator(
     TrademarkRegistrationSchema,

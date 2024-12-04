@@ -1,7 +1,7 @@
-import express from 'express';
+import express, { Router, Request, Response } from 'express';
 import { trademarkController } from '../controllers/trademarkController';
-import { asyncHandler } from '../../utils/asyncLock';
-import { rateLimiter } from '../../../middleware/ratelimiter';
+import { AsyncLock } from '../../utils/AsyncLock';
+import { sensitiveOpsLimiter } from '../../../middleware/ratelimiter';
 import { corsMiddleware } from '../../../middleware/corsMiddleware';
 import { authenticateToken } from '../../../middleware/auth';
 import { Counter, Histogram } from 'prom-client';
@@ -9,9 +9,16 @@ import { loggers } from '../../../observability/contextLoggers';
 import { featureFlags } from '../utils/validation';
 import { Invariant } from '../../utils/invariant';
 
-const router = express.Router();
+const router: Router = express.Router();
 const logger = loggers.trademark;
+const asyncLock = new AsyncLock();
 
+/**
+ * We separate metrics to detect:
+ * - Traffic anomalies per path.
+ * - Performance degradation patterns.
+ * - Rate limit effectiveness.
+ */
 const routeMetrics = {
     requests: new Counter({
         name: 'trademark_route_requests_total',
@@ -26,21 +33,39 @@ const routeMetrics = {
     })
 };
 
-// Verify route invariants
-Invariant.assert(
-    router !== null,
-    'Express router must be initialized'
-);
+/**
+ * Factory pattern enables:
+ * - Dynamic feature flag evaluation.
+ * - Middleware composition testing.
+ * - Isolated rate limit policies.
+ */
+const createSearchRoute = () => {
+    const baseMiddleware = [
+        corsMiddleware,
+        authenticateToken
+    ];
 
-// Configure route with feature flags
-const searchRoute = [
-    corsMiddleware,
-    authenticateToken,
-    ...(featureFlags.TRADEMARK.ENABLE_RATE_LIMITING ? [rateLimiter] : []),
-    asyncHandler(async (req, res) => {
+     /**
+     * Split middleware to:
+     * - Isolate security from operational concerns
+     * - Enable granular feature control
+     */
+    const conditionalMiddleware = featureFlags.TRADEMARK.ENABLE_RATE_LIMITING 
+        ? [sensitiveOpsLimiter] 
+        : [];
+
+    /**
+     * Lock by IP to:
+     * - Prevent duplicate search spam
+     * - Protect downstream trademark APIs
+     * - Ensure fair resource distribution
+     */
+    const requestHandler = async (req: Request, res: Response): Promise<void> => {
         const timer = routeMetrics.latency.startTimer();
+        const lockKey = `trademark-search-${req.ip}`;
         
         try {
+            await asyncLock.acquire(lockKey);
             routeMetrics.requests.inc({ 
                 method: 'GET', 
                 path: '/search', 
@@ -55,6 +80,7 @@ const searchRoute = [
                 status: 'success' 
             });
         } catch (error) {
+            logger.error({ error, path: '/search' }, 'Search route error');
             routeMetrics.requests.inc({ 
                 method: 'GET', 
                 path: '/search', 
@@ -62,11 +88,24 @@ const searchRoute = [
             });
             throw error;
         } finally {
+            asyncLock.release(lockKey);
             timer({ method: 'GET', path: '/search' });
         }
-    })
-];
+    };
 
-router.get('/search', ...searchRoute);
+    return [...baseMiddleware, ...conditionalMiddleware, requestHandler];
+};
+
+/**
+ * Early router validation prevents:
+ * - Runtime middleware chain errors
+ * - Invalid route registrations
+ */
+Invariant.assert(
+    router instanceof Router,
+    'Express router must be initialized'
+);
+
+router.get('/search', ...createSearchRoute());
 
 export default router;
