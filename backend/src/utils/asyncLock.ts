@@ -1,5 +1,5 @@
 import { Counter, Histogram } from 'prom-client';
-import { loggers } from '../../../observability/contextLoggers';
+import { loggers } from '../../observability/contextLoggers';
 
 const logger = loggers.recommendation;
 

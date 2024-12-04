@@ -35,8 +35,8 @@ export class TrademarkError extends Error {
    * @param details - Additional error context is optional, can be added.
    */
   constructor(
-    public readonly code: TrademarkErrorCode,
     message: string,
+    public readonly code: string,
     public readonly details?: unknown
   ) {
     super(message);
@@ -69,9 +69,9 @@ export class TrademarkError extends Error {
     const criticalErrors = [
       TrademarkErrorCode.API_ERROR,
       TrademarkErrorCode.CACHE_ERROR
-    ];
+    ] as TrademarkErrorCode[];
     
-    return criticalErrors.includes(this.code) ? 'critical' : 'normal';
+    return criticalErrors.includes(this.code as TrademarkErrorCode) ? 'critical' : 'normal';
   }
 
   /**
@@ -131,5 +131,33 @@ export class TrademarkError extends Error {
       details: this.details,
       stack: this.stack
     };
+  }
+}
+
+export class TrademarkValidationError extends TrademarkError {
+  constructor(details?: unknown) {
+    super('Trademark validation failed', 'VALIDATION_ERROR', details);
+    this.name = 'TrademarkValidationError';
+  }
+}
+
+export class TrademarkNotFoundError extends TrademarkError {
+  constructor(details?: unknown) {
+    super('Trademark not found', 'NOT_FOUND', details);
+    this.name = 'TrademarkNotFoundError';
+  }
+}
+
+export class TrademarkRateLimitError extends TrademarkError {
+  constructor(details?: unknown) {
+    super('Rate limit exceeded', 'RATE_LIMIT_EXCEEDED', details);
+    this.name = 'TrademarkRateLimitError';
+  }
+}
+
+export class TrademarkExternalAPIError extends TrademarkError {
+  constructor(details?: unknown) {
+    super('External API error', 'EXTERNAL_API_ERROR', details);
+    this.name = 'TrademarkExternalAPIError';
   }
 }
