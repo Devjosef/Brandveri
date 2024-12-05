@@ -1,98 +1,82 @@
-import { Counter, Histogram } from 'prom-client';
+import { Counter } from 'prom-client';
 import { loggers } from '../../observability/contextLoggers';
 
-const logger = loggers.recommendation;
+const logger = loggers.system;
 
-const lockMetrics = {
-    acquisitionDuration: new Histogram({
-        name: 'lock_acquisition_duration_seconds',
-        help: 'Duration of lock acquisition attempts',
-        labelNames: ['key', 'status'],
-        buckets: [0.01, 0.05, 0.1, 0.5, 1]
-    }),
-    operations: new Counter({
-        name: 'lock_operations_total',
-        help: 'Total number of lock operations',
-        labelNames: ['operation', 'key', 'status']
-    })
-};
+/**
+ * Single metric to.
+ * - Only track critical lock states,
+ * - And minimize overhead.
+ */
+const lockMetrics = new Counter({
+    name: 'system_lock_state',
+    help: 'Lock state changes',
+    labelNames: ['state']
+});
 
+/**
+ * A simplified lock to handle.
+ * - Direct state management,
+ * - Clear ownership,
+ * - Minimal overhead.
+ */
 export class AsyncLock {
-    private locks = new Map<string, boolean>();
-    private waitQueue = new Map<string, Array<{
-        resolve: () => void;
-        reject: (error: Error) => void;
-        timer: NodeJS.Timeout;
-        startTime: number;
-    }>>();
+    private readonly locks = new Map<string, boolean>();
+    private readonly pending = new Map<string, Array<() => void>>();
 
     async acquire(key: string, timeoutMs = 30000): Promise<void> {
-        const startTime = Date.now();
-        logger.debug({ key, timeoutMs }, 'Attempting to acquire lock');
-        
-        if (!this.locks.get(key)) {
+        if (!this.locks.has(key)) {
             this.locks.set(key, true);
-            lockMetrics.operations.inc({ operation: 'acquire', key, status: 'immediate' });
-            lockMetrics.acquisitionDuration.observe({ key, status: 'immediate' }, 0);
-            logger.debug({ key }, 'Lock acquired immediately');
+            lockMetrics.inc({ state: 'acquired' });
+            logger.debug({ key }, 'Lock acquired');
             return;
         }
 
-        logger.debug({ key }, 'Lock busy, adding to queue');
         return new Promise<void>((resolve, reject) => {
             const timer = setTimeout(() => {
-                this.removeFromQueue(key, resolve);
-                lockMetrics.operations.inc({ operation: 'acquire', key, status: 'timeout' });
-                logger.warn({ key, timeoutMs }, 'Lock acquisition timed out');
-                reject(new Error(`Lock acquisition timed out after ${timeoutMs}ms`));
+                this.removePending(key, resolve);
+                logger.warn({ key, timeoutMs }, 'Lock acquisition timeout');
+                reject(new Error(`Lock timeout: ${key}`));
             }, timeoutMs);
 
-            this.addToQueue(key, resolve, reject, timer, startTime);
+            this.addPending(key, () => {
+                clearTimeout(timer);
+                resolve();
+            });
         });
     }
 
     release(key: string): void {
-        const waitQueue = this.waitQueue.get(key) || [];
-        logger.debug({ key, queueLength: waitQueue.length }, 'Releasing lock');
-        
-        if (waitQueue.length > 0) {
-            const next = waitQueue.shift()!;
-            clearTimeout(next.timer);
-            const duration = (Date.now() - next.startTime) / 1000;
-            lockMetrics.acquisitionDuration.observe({ key, status: 'queued' }, duration);
-            logger.debug({ key, duration }, 'Lock transferred to next in queue');
-            next.resolve();
+        const next = this.pending.get(key)?.shift();
+        if (next) {
+            next();
+            lockMetrics.inc({ state: 'transferred' });
+            logger.debug({ key }, 'Lock transferred');
         } else {
-            this.locks.set(key, false);
-            logger.debug({ key }, 'Lock released with empty queue');
+            this.locks.delete(key);
+            this.pending.delete(key);
+            lockMetrics.inc({ state: 'released' });
+            logger.debug({ key }, 'Lock released');
         }
-
-        lockMetrics.operations.inc({ operation: 'release', key, status: 'success' });
     }
 
-    private addToQueue(
-        key: string, 
-        resolve: () => void, 
-        reject: (error: Error) => void,
-        timer: NodeJS.Timeout,
-        startTime: number
-    ): void {
-        if (!this.waitQueue.has(key)) {
-            this.waitQueue.set(key, []);
-        }
-        this.waitQueue.get(key)!.push({ resolve, reject, timer, startTime });
-        lockMetrics.operations.inc({ operation: 'queue', key, status: 'added' });
-        logger.debug({ key }, 'Added request to queue');
+    private addPending(key: string, resolver: () => void): void {
+        const waiters = this.pending.get(key) ?? [];
+        waiters.push(resolver);
+        this.pending.set(key, waiters);
+        lockMetrics.inc({ state: 'pending' });
+        logger.debug({ key, waitersCount: waiters.length }, 'Added to pending queue');
     }
 
-    private removeFromQueue(key: string, resolve: () => void): void {
-        const queue = this.waitQueue.get(key);
-        if (queue) {
-            const index = queue.findIndex(item => item.resolve === resolve);
+    private removePending(key: string, resolver: () => void): void {
+        const waiters = this.pending.get(key);
+        if (waiters) {
+            const index = waiters.indexOf(resolver);
             if (index !== -1) {
-                queue.splice(index, 1);
-                lockMetrics.operations.inc({ operation: 'queue', key, status: 'removed' });
-                logger.debug({ key }, 'Removed request from queue');
+                waiters.splice(index, 1);
+                if (waiters.length === 0) {
+                    this.pending.delete(key);
+                }
             }
         }
     }
