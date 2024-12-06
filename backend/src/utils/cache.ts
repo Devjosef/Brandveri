@@ -1,184 +1,129 @@
-import { Redis } from 'ioredis';
+import { cacheWrapper, CacheServiceName } from '../../cache/cacheWrapper';
+import { loggers } from '../../observability/contextLoggers';
 import { Counter, Histogram } from 'prom-client';
-import { env } from './env';
 
-// Metrics for cache operations
-const cacheMetrics = {
-  operations: new Counter({
-    name: 'cache_operations_total',
-    help: 'Total number of cache operations',
-    labelNames: ['operation', 'status', 'service'],
-  }),
-  duration: new Histogram({
-    name: 'cache_operation_duration_seconds',
-    help: 'Duration of cache operations',
-    labelNames: ['operation'],
-    buckets: [0.01, 0.05, 0.1, 0.5, 1],
-  }),
+const logger = loggers.system;
+
+/**
+ * Service-specific metrics to augment core cache metrics.
+ */
+const serviceMetrics = {
+    operations: new Counter({
+        name: 'service_cache_operations_total',
+        help: 'Service-specific cache operations',
+        labelNames: ['operation', 'status', 'service']
+    }),
+    duration: new Histogram({
+        name: 'service_cache_duration_seconds',
+        help: 'Service-specific cache duration',
+        labelNames: ['operation', 'service'],
+        buckets: [0.01, 0.05, 0.1, 0.5, 1]
+    })
 };
 
-export class Cache {
-  private readonly client: Redis;
-  private readonly defaultTTL: number;
+/**
+ * Service-specific cache wrapper:
+ * - Closer to service implementation
+ * - Service-specific cache patterns
+ * - Reuses production cache infrastructure
+ */
+export class ServiceCache {
+    constructor(
+        private readonly service: CacheServiceName,
+        private readonly defaultTTL: number = 3600
+    ) {}
 
-  constructor(config = {
-    host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
-    password: env.REDIS_PASSWORD,
-    defaultTTL: 3600, // 1 hour
-  }) {
-    this.client = new Redis({
-      host: config.host,
-      port: config.port,
-      password: config.password,
-      retryStrategy: (times) => Math.min(times * 50, 2000), // Retry logic
-    });
-
-    this.defaultTTL = config.defaultTTL;
-    this.setupErrorHandling();
-  }
-
-  /**
-   * Sets a cache entry with optional TTL and namespacing.
-   */
-  async set<T>(key: string, value: T, options?: { ttl?: number; service?: string }): Promise<void> {
-    const timer = cacheMetrics.duration.startTimer({ operation: 'set' });
-    const service = options?.service || 'unknown';
-    const namespacedKey = this.getNamespacedKey(key, service);
-
-    try {
-      const serializedValue = JSON.stringify(value);
-      const ttl = options?.ttl || this.defaultTTL;
-
-      await this.client.set(namespacedKey, serializedValue, 'EX', ttl);
-
-      cacheMetrics.operations.inc({
-        operation: 'set',
-        status: 'success',
-        service,
-      });
-    } catch (error) {
-      cacheMetrics.operations.inc({
-        operation: 'set',
-        status: 'error',
-        service,
-      });
-      throw new CacheError('SET_ERROR', `Failed to set cache key: ${key}`, error);
-    } finally {
-      timer();
+    async get<T>(key: string): Promise<T | null> {
+        const timer = serviceMetrics.duration.startTimer({ 
+            operation: 'get',
+            service: this.service 
+        });
+        
+        try {
+            const result = await cacheWrapper.get<T>(key, {
+                service: this.service
+            });
+            
+            serviceMetrics.operations.inc({
+                operation: 'get',
+                status: result ? 'hit' : 'miss',
+                service: this.service
+            });
+            
+            return result;
+        } catch (error) {
+            serviceMetrics.operations.inc({
+                operation: 'get',
+                status: 'error',
+                service: this.service
+            });
+            logger.warn({ error, key }, 'Cache get failed, continuing without cache');
+            return null;
+        } finally {
+            timer();
+        }
     }
-  }
 
-  /**
-   * Retrieves a cache entry by key, with optional service namespace.
-   */
-  async get<T>(key: string, options?: { service?: string }): Promise<T | null> {
-    const timer = cacheMetrics.duration.startTimer({ operation: 'get' });
-    const service = options?.service || 'unknown';
-    const namespacedKey = this.getNamespacedKey(key, service);
-
-    try {
-      const data = await this.client.get(namespacedKey);
-
-      cacheMetrics.operations.inc({
-        operation: 'get',
-        status: data ? 'hit' : 'miss',
-        service,
-      });
-
-      return data ? JSON.parse(data) : null;
-    } catch (error) {
-      cacheMetrics.operations.inc({
-        operation: 'get',
-        status: 'error',
-        service,
-      });
-      throw new CacheError('GET_ERROR', `Failed to get cache key: ${key}`, error);
-    } finally {
-      timer();
+    async set<T>(key: string, value: T, ttl?: number): Promise<void> {
+        const timer = serviceMetrics.duration.startTimer({ 
+            operation: 'set',
+            service: this.service 
+        });
+        
+        try {
+            await cacheWrapper.set(key, value, {
+                ttl: ttl || this.defaultTTL,
+                service: this.service
+            });
+            
+            serviceMetrics.operations.inc({
+                operation: 'set',
+                status: 'success',
+                service: this.service
+            });
+        } catch (error) {
+            serviceMetrics.operations.inc({
+                operation: 'set',
+                status: 'error',
+                service: this.service
+            });
+            logger.warn({ error, key }, 'Cache set failed');
+        } finally {
+            timer();
+        }
     }
-  }
 
-  /**
-   * Invalidates a cache entry by key, with optional service namespace.
-   */
-  async invalidate(key: string, options?: { service?: string }): Promise<void> {
-    const timer = cacheMetrics.duration.startTimer({ operation: 'invalidate' });
-    const service = options?.service || 'unknown';
-    const namespacedKey = this.getNamespacedKey(key, service);
-
-    try {
-      await this.client.del(namespacedKey);
-      cacheMetrics.operations.inc({
-        operation: 'invalidate',
-        status: 'success',
-        service,
-      });
-    } catch (error) {
-      cacheMetrics.operations.inc({
-        operation: 'invalidate',
-        status: 'error',
-        service,
-      });
-      throw new CacheError('INVALIDATE_ERROR', `Failed to invalidate cache key: ${key}`, error);
-    } finally {
-      timer();
+    async invalidate(key: string): Promise<void> {
+        const timer = serviceMetrics.duration.startTimer({ 
+            operation: 'invalidate',
+            service: this.service 
+        });
+        
+        try {
+            await cacheWrapper.del(key, {
+                service: this.service
+            });
+            
+            serviceMetrics.operations.inc({
+                operation: 'invalidate',
+                status: 'success',
+                service: this.service
+            });
+        } catch (error) {
+            serviceMetrics.operations.inc({
+                operation: 'invalidate',
+                status: 'error',
+                service: this.service
+            });
+            logger.warn({ error, key }, 'Cache invalidation failed');
+        } finally {
+            timer();
+        }
     }
-  }
-
-  /**
-   * Checks if Redis is connected and operational.
-   */
-  async ping(): Promise<boolean> {
-    try {
-      await this.client.ping();
-      return true;
-    } catch (error) {
-      console.error('Redis connection is not healthy:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Adds a namespace to the cache key to avoid collisions across services.
-   */
-  private getNamespacedKey(key: string, service: string): string {
-    return `${service}:${key}`;
-  }
-
-  /**
-   * Sets up error handling for Redis client events.
-   */
-  private setupErrorHandling(): void {
-    this.client.on('error', (error) => {
-      console.error('Redis client error:', error);
-      cacheMetrics.operations.inc({
-        operation: 'connection',
-        status: 'error',
-        service: 'redis',
-      });
-    });
-
-    this.client.on('connect', () => {
-      cacheMetrics.operations.inc({
-        operation: 'connection',
-        status: 'success',
-        service: 'redis',
-      });
-    });
-  }
 }
 
-export class CacheError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly cause?: unknown,
-  ) {
-    super(message);
-    this.name = 'CacheError';
-  }
-}
-
-// Export a singleton instance of the Cache
-export const cacheService = new Cache();
+// Export service-specific instances
+export const trademarkCache = new ServiceCache('trademark');
+export const paymentCache = new ServiceCache('payment');
+export const copyrightCache = new ServiceCache('copyright');
+export const recommendationCache = new ServiceCache('recommendation');

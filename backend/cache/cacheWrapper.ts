@@ -3,11 +3,15 @@ import redisClient from './redis';
 import redisCluster from './redisCluster';
 import { createMetricsCollector, MetricsCollector } from '../cache/metrics';
 
+// First, define the service type
+export type CacheServiceName = 'trademark' | 'payment' | 'copyright' | 'recommendation';
+
 interface CacheOptions extends Partial<RedisOptions> {
   ttl?: number;
   useCluster?: boolean;
   retries?: number;
   retryDelay?: number;
+  service?: CacheServiceName;
 }
 
 export class CacheError extends Error {
