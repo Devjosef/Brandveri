@@ -85,8 +85,8 @@ export const config = ConfigSchema.parse({
             MAX_PAGE_SIZE: parseInt(process.env.TRADEMARK_MAX_PAGE_SIZE || '100', 10)
         },
         uspto: {
-            url: process.env.USPTP_API_URL || 'https://api.uspto.gov',
-            key: process.env.USPTP_API_KEY || 'default-key'
+            url: process.env.USPTO_API_URL || 'https://api.uspto.gov',
+            key: process.env.USPTO_API_KEY || 'default-key'
         },
         euipo: {
             url: process.env.EUIPO_API_URL || 'https://api.euipo.europa.eu',
