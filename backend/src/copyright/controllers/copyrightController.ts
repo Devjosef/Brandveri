@@ -1,162 +1,119 @@
-import { Request, Response } from 'express';
-import CopyrightService from '../services/copyrightService';
-import { ApiResponse, CopyrightSearchParams, Copyright, CopyrightRegistration } from '../../../types/copyright';
-import { AuthError } from '../../../auth/utils/AuthError';
-import { validateCopyrightRegistration } from '../validators/copyrightValidator';
-import { Counter } from 'prom-client';
+import { Request, Response, NextFunction } from 'express';
+import { copyrightService } from '../services/copyrightService';
+import { loggers } from '../../../observability/contextLoggers';
+import { z } from 'zod';
 
-// Add metrics for copyright endpoints
-const copyrightEndpointMetrics = new Counter({
-  name: 'copyright_endpoint_requests_total',
-  help: 'Total number of requests to copyright endpoints',
-  labelNames: ['endpoint', 'status']
-});
+const logger = loggers.copyright;
 
 /**
- * CopyrightController class handles copyright-related requests.
+ * Search query validation schema
+ * Reasoning: Ensure query parameters meet requirements before hitting GitHub API
  */
+const searchQuerySchema = z.object({
+    query: z.string()
+        .min(3, 'Search query must be at least 3 characters')
+        .max(100, 'Search query too long'),
+    page: z.number().optional().default(1),
+    limit: z.number().optional().default(10)
+});
+
 class CopyrightController {
     /**
-     * Searches for copyrights based on the query parameters.
-     * @param req - Express request object.
-     * @param res - Express response object.
+     * Search for software copyrights
+     * Reasoning: 
+     * 1. Input validation before service call
+     * 2. Proper error handling for client
+     * 3. Consistent response format
      */
-    public async search(req: Request, res: Response<ApiResponse<Copyright[]>>): Promise<void> {
-        const { query, page, limit } = req.query;
-
-        // Construct search parameters
-        const params: CopyrightSearchParams = {
-            query: query as string,
-            page: parseInt(page as string) || 1,
-            limit: parseInt(limit as string) || 10,
-        };
-
+    async searchSoftwareCopyright(
+        req: Request, 
+        res: Response, 
+        next: NextFunction
+    ): Promise<Response | void> {
         try {
-            // Call the CopyrightService to search copyrights
-            const response = await CopyrightService.searchCopyright(params);
-
-            // Return the response with appropriate status code
-            res.status(response.success ? 200 : 500).json(response);
-        } catch (error) {
-            console.error('Error in CopyrightController.search:', error);
-            res.status(500).json({
-                success: false,
-                error: 'An error occurred while searching copyrights.',
+            const validatedQuery = searchQuerySchema.parse({
+                query: req.query.q,
+                page: parseInt(req.query.page as string) || 1,
+                limit: parseInt(req.query.limit as string) || 10
             });
-        }
-    }
 
-    async register(req: Request, res: Response<ApiResponse<Copyright>>): Promise<void> {
-        try {
-            copyrightEndpointMetrics.inc({ endpoint: 'register', status: 'attempt' });
-            
-            // Validate request body
-            const validatedData = await validateCopyrightRegistration(req.body);
-            
-            const copyright = await CopyrightService.registerCopyright(validatedData);
-            
-            copyrightEndpointMetrics.inc({ endpoint: 'register', status: 'success' });
-            res.status(201).json({
+            logger.info({ 
+                query: validatedQuery,
+                userId: req.user?.id 
+            }, 'Software copyright search initiated');
+
+            const results = await copyrightService.searchCopyright(
+                validatedQuery.query
+            );
+
+            return res.status(200).json({
                 success: true,
-                data: copyright,
-                error: null
+                data: results.data,
+                metadata: {
+                    ...results.metadata,
+                    query: validatedQuery.query,
+                    page: validatedQuery.page,
+                    limit: validatedQuery.limit
+                }
             });
+
         } catch (error) {
-            copyrightEndpointMetrics.inc({ endpoint: 'register', status: 'error' });
-            if (error instanceof AuthError) {
-                res.status(error.statusCode).json({
+            logger.error({ 
+                error,
+                query: req.query,
+                userId: req.user?.id
+            }, 'Software copyright search failed');
+
+            if (error instanceof z.ZodError) {
+                return res.status(400).json({
                     success: false,
-                    data: null,
-                    error: error.message
+                    error: 'Invalid search parameters',
+                    details: error.errors
                 });
-                return;
             }
-            res.status(500).json({
-                success: false,
-                data: null,
-                error: 'Internal server error'
-            });
+
+            return next(error);
         }
     }
 
-    async get(req: Request, res: Response<ApiResponse<Copyright>>): Promise<void> {
+    /**
+     * Get detailed copyright information
+     * Reasoning: Provide detailed view of a specific software copyright
+     */
+    async getSoftwareCopyrightDetails(
+        req: Request, 
+        res: Response, 
+        next: NextFunction
+    ): Promise<Response | void> {
         try {
-            const copyright = await CopyrightService.getCopyrightById(req.params.id);
-            if (copyright) {
-                res.status(200).json({
-                    success: true,
-                    data: copyright,
-                    error: '',
-                });
-            } else {
-                res.status(404).json({
-                    success: false,
-                    data: null,
-                    error: 'Copyright not found',
-                });
-            }
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                data: null,
-                error: error.message,
-            });
-        }
-    }
+            const { owner, repo } = req.params;
 
-    async update(req: Request, res: Response<ApiResponse<Copyright>>): Promise<void> {
-        try {
-            const updatedCopyright = await CopyrightService.updateCopyright(req.params.id, req.body);
-            if (updatedCopyright) {
-                res.status(200).json({
-                    success: true,
-                    data: updatedCopyright,
-                    error: '',
-                });
-            } else {
-                res.status(404).json({
-                    success: false,
-                    data: null,
-                    error: 'Copyright not found',
-                });
-            }
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                data: null,
-                error: error.message,
-            });
-        }
-    }
+            logger.info({ 
+                owner,
+                repo,
+                userId: req.user?.id 
+            }, 'Software copyright details requested');
 
-    async delete(req: Request, res: Response<ApiResponse<null>>): Promise<void> {
-        try {
-            const success = await CopyrightService.deleteCopyright(req.params.id);
-            if (success) {
-                res.status(204).json({
-                    success: true,
-                    data: null,
-                    error: '',
-                });
-            } else {
-                res.status(404).json({
-                    success: false,
-                    data: null,
-                    error: 'Copyright not found',
-                });
-            }
-        } catch (error) {
-            res.status(500).json({
-                success: false,
-                data: null,
-                error: error.message,
+            const details = await copyrightService.getRepositoryDetails(
+                owner,
+                repo
+            );
+
+            return res.status(200).json({
+                success: true,
+                data: details
             });
+
+        } catch (error) {
+            logger.error({ 
+                error,
+                params: req.params,
+                userId: req.user?.id
+            }, 'Failed to get software copyright details');
+
+            return next(error);
         }
     }
 }
 
-// Instantiate the controller
-const copyrightController = new CopyrightController();
-
-// Export the controller
-export default copyrightController;
+export const copyrightController = new CopyrightController();

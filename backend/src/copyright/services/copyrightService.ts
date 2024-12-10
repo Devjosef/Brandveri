@@ -3,46 +3,64 @@ import { Counter, Histogram } from 'prom-client';
 import { loggers } from '../../../observability/contextLoggers';
 import { copyrightCache } from '../../utils/cache';
 import { CopyrightError, CopyrightErrorCode } from '../utils/copyrightError';
+import { crConfig } from '../utils/crConfig';
+import { ApiResponse } from '../../../types/copyright';
 
 const logger = loggers.copyright;
 
+interface SoftwareSearchResult {
+    name: string;
+    type: 'PROPRIETARY' | 'OPEN_SOURCE' | 'UNKNOWN';
+    license: string;
+    repository: string;
+    publisher: string;
+    firstPublished: string;
+    copyrightStatus: {
+        isProtected: boolean;
+        creationDate: string;
+        jurisdiction: string;
+        explanation: string;
+    };
+    matches: {
+        source: 'GITHUB';
+        confidence: number;
+        details: string;
+    }[];
+}
+
 /**
- * Metrics following established patterns for production monitoring.
+ * Metrics for production monitoring
+ * Reasoning: Track API usage, performance, and error rates
  */
 const softwareMetrics = {
     searches: new Counter({
         name: 'software_copyright_searches_total',
         help: 'Total number of software copyright searches',
-        labelNames: ['source', 'status']
+        labelNames: ['source', 'status', 'license_type']
     }),
     latency: new Histogram({
         name: 'software_copyright_search_duration_seconds',
         help: 'Duration of software copyright searches',
-        labelNames: ['source'],
+        labelNames: ['source', 'cache_status'],
         buckets: [0.1, 0.5, 1, 2, 5]
     })
 };
 
-/**
- * Initial MVP focusing on GitHub as primary source
- * Most reliable and immediate source for software verification
- * Future: Adding other sources based on actual usage and needs
- */
 class CopyrightService {
     private readonly github: Octokit;
 
     constructor() {
         this.github = new Octokit({
-            auth: process.env.GITHUB_TOKEN,
+            auth: crConfig.GITHUB.TOKEN,
             retry: {
                 enabled: true,
-                retries: 3
+                retries: crConfig.GITHUB.RETRY_ATTEMPTS
             },
             throttle: {
                 enabled: true,
                 onRateLimit: (retryAfter: number) => {
                     logger.warn({ retryAfter }, 'GitHub API rate limit exceeded');
-                    return true;
+                    return retryAfter < 60;
                 }
             }
         });
@@ -50,105 +68,171 @@ class CopyrightService {
 
     /**
      * Search for software copyright information
-     *
-     * 1. Single source of truth initially (GitHub)
-     * 2. Caching for performance and rate limit management
-     * 3. Clear error handling for production stability
+     * Reasoning:
+     * 1. GitHub as a primary source for open-source software
+     * 2. Caching to optimize performance and manage rate limits
+     * 3. Detailed logging for monitoring and debugging
      */
-    async searchCopyright(query: string): Promise<ApiResponse<SoftwareSearchResult>> {
-        const timer = softwareMetrics.latency.startTimer({ source: 'github' });
-        const cacheKey = `software:${query}`;
+    async searchCopyright(query: string): Promise<ApiResponse<SoftwareSearchResult[]>> {
+        const timer = softwareMetrics.latency.startTimer();
+        const requestId = crypto.randomUUID(); // Generate unique request ID
 
         try {
-            // Check cache first
-            const cached = await copyrightCache.get<SoftwareSearchResult>(cacheKey);
+            const cacheKey = `software:${query}`;
+            const cached = await copyrightCache.get<SoftwareSearchResult[]>(cacheKey);
+
             if (cached) {
                 softwareMetrics.searches.inc({ 
                     source: 'cache', 
-                    status: 'hit' 
+                    status: 'hit',
+                    license_type: 'any'
                 });
-                return { success: true, data: cached };
+                return { 
+                    success: true, 
+                    data: cached,
+                    metadata: {
+                        timestamp: new Date().toISOString(),
+                        requestId,
+                        disclaimer: 'Results from cache. Software is automatically protected by copyright upon creation',
+                        lastUpdated: new Date().toISOString(),
+                    }
+                };
             }
 
             const { data } = await this.github.search.repos({
                 q: query,
-                per_page: 100,
+                per_page: crConfig.GITHUB.MAX_ITEMS_PER_SEARCH,
                 sort: 'stars'
             });
 
-            const results = await this.enrichWithLicenseInfo(data.items);
+            const results = await this.enrichWithCopyrightInfo(data.items);
             
-            // Cache results
-            await copyrightCache.set(cacheKey, results, { ttl: 3600 });
-
-            softwareMetrics.searches.inc({ 
-                source: 'github', 
-                status: 'success' 
-            });
+            // Cache results with TTL in seconds
+            await copyrightCache.set(
+                cacheKey, 
+                results, 
+                crConfig.CACHE.TTL  // Time-to-live in seconds
+            );
 
             return { 
                 success: true, 
                 data: results,
                 metadata: {
-                    disclaimer: 'Results are indicative and not legal advice',
-                    lastUpdated: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    requestId,
+                    disclaimer: 'Software is automatically protected by copyright upon creation. License type indicates usage rights, not copyright status.',
+                    lastUpdated: new Date().toISOString(),
+                    totalCount: data.total_count,
+                    searchScore: this.calculateSearchScore(results)
                 }
             };
 
         } catch (error) {
             softwareMetrics.searches.inc({ 
                 source: 'github', 
-                status: 'error' 
+                status: 'error',
+                license_type: 'unknown'
             });
 
-            logger.error({ error, query }, 'Software copyright search failed');
+            // Ensure error is an object before logging it.
+            const errorDetails = error instanceof Error ? { message: error.message, stack: error.stack } : { error };
+
+            logger.error({ 
+                error: errorDetails, 
+                query,
+                requestId 
+            }, 'Software copyright search failed');
             
             throw new CopyrightError(
                 CopyrightErrorCode.SEARCH_ERROR,
                 'Failed to search software copyrights',
-                error
+                errorDetails
             );
         } finally {
-            timer();
+            timer({ source: 'github', cache_status: 'miss' });
         }
     }
 
     /**
      * Enrich repository data with license information
-     * Provides immediate copyright status indication
+     * Reasoning: Provides immediate copyright status indication.
      */
-    private async enrichWithLicenseInfo(repos: any[]): Promise<SoftwareSearchResult[]> {
+    private async enrichWithCopyrightInfo(repos: any[]): Promise<SoftwareSearchResult[]> {
         return Promise.all(repos.map(async repo => ({
             name: repo.full_name,
-            type: repo.private ? 'PROPRIETARY' : 'OPEN_SOURCE',
+            type: this.determineType(repo),
             license: repo.license?.spdx_id || 'UNKNOWN',
             repository: repo.html_url,
             publisher: repo.owner.login,
             firstPublished: repo.created_at,
+            copyrightStatus: {
+                isProtected: true,
+                creationDate: repo.created_at,
+                jurisdiction: 'Worldwide',
+                explanation: 'Software is automatically protected by copyright upon creation under the Berne Convention'
+            },
             matches: [{
                 source: 'GITHUB',
                 confidence: this.calculateConfidence(repo),
-                details: `Found in GitHub with ${repo.stargazers_count} stars`
+                details: this.generateDetails(repo)
             }]
         })));
     }
 
+    private determineType(repo: any): SoftwareSearchResult['type'] {
+        if (repo.private) return 'PROPRIETARY';
+        if (repo.license) return 'OPEN_SOURCE';
+        return 'UNKNOWN';
+    }
+
+    private generateDetails(repo: any): string {
+        const details = [
+            `Found in GitHub with ${repo.stargazers_count} stars`,
+            `Created on ${new Date(repo.created_at).toLocaleDateString()}`,
+            repo.license 
+                ? `Licensed under ${repo.license.spdx_id}` 
+                : 'No explicit license (All rights reserved)'
+        ];
+        return details.join('. ');
+    }
+
+    private calculateSearchScore(results: SoftwareSearchResult[]): number {
+        if (!results.length) return 0;
+        
+        return results.reduce((acc, result) => 
+            acc + result.matches[0].confidence, 0) / results.length;
+    }
+
     /**
      * Calculate match confidence based on repository metrics
-     * Provides reliability indicator for results
+     * Reasoning: 
+     * 1. Stars indicate project popularity and reliability
+     * 2. Age indicates project stability
+     * 3. License presence indicates proper copyright management
      */
-    private calculateConfidence(repo: any): number {
+    private calculateConfidence(repo: {
+        stargazers_count: number;
+        created_at: string;
+        license: { spdx_id: string } | null;
+    }): number {
         const factors = {
-            stars: Math.min(repo.stargazers_count / 1000, 1),
-            age: Math.min((Date.now() - new Date(repo.created_at).getTime()) / (365 * 24 * 60 * 60 * 1000), 1),
+            stars: Math.min(repo.stargazers_count / 1000, 1),  // Max 1000 stars for full score
+            age: Math.min(
+                (Date.now() - new Date(repo.created_at).getTime()) / 
+                (365 * 24 * 60 * 60 * 1000), // Convert to years
+                1
+            ),
             hasLicense: repo.license ? 0.3 : 0
         };
 
+        // Weight factors and ensure final score is between 0 and 1.
         return Math.min(
-            (factors.stars * 0.4) + 
-            (factors.age * 0.3) + 
-            factors.hasLicense,
+            (factors.stars * 0.4) +    // 40% weight for popularity
+            (factors.age * 0.3) +      // 30% weight for project age
+            factors.hasLicense,         // 30% weight for license presence
             1
         );
     }
 }
+
+export const copyrightService = new CopyrightService();

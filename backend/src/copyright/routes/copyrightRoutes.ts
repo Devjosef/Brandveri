@@ -1,73 +1,67 @@
-import express, { Request, Response } from 'express';
-import copyrightService from '../services/copyrightService';
-import { CopyrightSearchParams, ApiResponse, CopyrightRegistration, Copyright } from '../../../types/copyright';
-import rateLimiter from '../../../middleware/ratelimiter'; // Import the rate limiter
-
-const router = express.Router();
-
-/**
- * Middleware to set API keys from environment variables.
- */
-router.use((req, _res, next) => {
-    
-    req.app.locals.euipoApiKey = process.env.EUIPO_API_KEY;
-    req.app.locals.usptoApiKey = process.env.USPTO_API_KEY;
-    next();
-});
+import { Router } from 'express';
+import { copyrightController } from '../controllers/copyrightController';
+import { validateRequest } from '../../middleware/validateRequest';
+import { rateLimiter } from '../../middleware/rateLimiter';
+import { authenticate } from '../../middleware/authenticate';
 
 /**
- * Route to search for copyrights.
- * @route GET /api/copyright/search
- * @param query - The search query for copyrights.
- * @param page - The page number for pagination.
- * @param limit - The number of results per page.
+ * Copyright routes
+ * Reasoning:
+ * 1. Authentication required for all routes
+ * 2. Rate limiting to prevent abuse
+ * 3. Request validation
  */
-router.get('/search', rateLimiter, async (req: Request, res: Response<ApiResponse<Copyright>>) => {
-    const { query, page, limit } = req.query;
+const router = Router();
 
-    try {
-        // Construct search parameters
-        const params: CopyrightSearchParams = {
-            query: query as string,
-            page: parseInt(page as string) || 1,
-            limit: parseInt(limit as string) || 10,
-        };
-
-        // Call the CopyrightService to search copyrights
-        const response = await copyrightService.searchCopyright(params);
-
-        // Return the response
-        res.status(response.success ? 200 : 500).json(response);
-    } catch (error) {
-        console.error('Error in copyright search route:', error);
-        res.status(500).json({
-            success: false,
-            error: 'An error occurred while searching copyrights.',
-        });
-    }
-});
+router.use(authenticate); // Protect all routes
+router.use(rateLimiter({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100 // limit each IP to 100 requests per windowMs
+}));
 
 /**
- * Route to register a new copyright.
- * @route POST /api/copyright/register
- * @param data - The copyright registration data.
+ * @route   GET /api/copyright/software/search
+ * @desc    Search for software copyrights
+ * @access  Private
  */
-router.post('/register', rateLimiter, async (req: Request, res: Response<ApiResponse<any>>) => {
-    try {
-        const data: CopyrightRegistration = req.body;
+router.get(
+    '/software/search',
+    validateRequest({
+        query: {
+            q: {
+                in: 'query',
+                isString: true,
+                required: true,
+                min: 3,
+                max: 100
+            }
+        }
+    }),
+    copyrightController.searchSoftwareCopyright
+);
 
-        // Call the CopyrightService to register a copyright
-        const response = await copyrightService.registerCopyright(data);
+/**
+ * @route   GET /api/copyright/software/:owner/:repo
+ * @desc    Get detailed copyright information for a specific repository
+ * @access  Private
+ */
+router.get(
+    '/software/:owner/:repo',
+    validateRequest({
+        params: {
+            owner: {
+                in: 'params',
+                isString: true,
+                required: true
+            },
+            repo: {
+                in: 'params',
+                isString: true,
+                required: true
+            }
+        }
+    }),
+    copyrightController.getSoftwareCopyrightDetails
+);
 
-        // Return the response
-        res.status(response.success ? 200 : 500).json(response);
-    } catch (error) {
-        console.error('Error in copyright registration route:', error);
-        res.status(500).json({
-            success: false,
-            error: 'An error occurred while registering the copyright.',
-        });
-    }
-});
-
-export default router;
+export { router as copyrightRoutes };
