@@ -4,7 +4,8 @@ import { loggers } from '../../../observability/contextLoggers';
 import { copyrightCache } from '../../utils/cache';
 import { CopyrightError, CopyrightErrorCode } from '../utils/copyrightError';
 import { crConfig } from '../utils/crConfig';
-import { ApiResponse } from '../../../types/copyright';
+import { ApiResponse, SoftwareCopyright } from '../../../types/copyright';
+import { GitHubRepository} from '../../../types/copyright.d';
 
 const logger = loggers.copyright;
 
@@ -232,6 +233,111 @@ class CopyrightService {
             factors.hasLicense,         // 30% weight for license presence
             1
         );
+    }
+
+    /**
+     * Get repository details
+     * Reasoning: Extend existing service with repository details without breaking current functionality
+     */
+    async getRepositoryDetails(
+        owner: string, 
+        repo: string
+    ): Promise<ApiResponse<SoftwareSearchResult>> {
+        const requestId = crypto.randomUUID();
+
+        try {
+            const { data } = await this.github.repos.get({
+                owner,
+                repo
+            });
+            // Transform GitHub data to our format
+            const transformedData = this.transformGitHubData({
+                ...data,
+                license: data.license ? {
+                    key: data.license.key,
+                    name: data.license.name,
+                    spdx_id: data.license.spdx_id || '',
+                    url: data.license.url || ''
+                } : null
+            });
+
+            return {
+                success: true,
+                data: {
+                    matches: [{
+                        ...transformedData,
+                        confidence: this.calculateConfidence({
+                            stargazers_count: data.stargazers_count,
+                            created_at: data.created_at,
+                            license: data.license ? { spdx_id: data.license.spdx_id || '' } : null
+                        }),
+                        source: 'GITHUB',
+                        details: ''
+                    }],
+                    metadata: {
+                        totalCount: 1,
+                        searchScore: this.calculateConfidence({
+                            stargazers_count: data.stargazers_count,
+                            created_at: data.created_at,
+                            license: data.license ? { spdx_id: data.license.spdx_id || '' } : null
+                        }),
+                        query: `${owner}/${repo}`,
+                        filters: {},
+                        disclaimer: 'Software is automatically protected by copyright upon creation',
+                        timestamp: new Date().toISOString(),
+                        requestId,
+                        lastUpdated: new Date().toISOString()
+                    }
+                },
+                metadata: {
+                    timestamp: new Date().toISOString(),
+                    requestId,
+                    disclaimer: 'Software is automatically protected by copyright upon creation',
+                    lastUpdated: new Date().toISOString()
+                }
+            };
+        } catch (error) {
+            logger.error({ 
+                error,
+                owner,
+                repo,
+                requestId 
+            }, 'Failed to get repository details');
+
+            throw new CopyrightError(
+                CopyrightErrorCode.GITHUB_API_ERROR,
+                'Failed to fetch repository details',
+                { owner, repo }
+            );
+        }
+    }
+
+    private transformGitHubData(repo: GitHubRepository): SoftwareCopyright {
+        return {
+            id: repo.id.toString(),
+            name: repo.full_name,
+            type: repo.private ? 'PROPRIETARY' : 'OPEN_SOURCE',
+            repository: {
+                url: repo.html_url,
+                owner: repo.owner.login,
+                name: repo.name,
+                stars: repo.stargazers_count,
+                createdAt: new Date(repo.created_at),
+                lastUpdated: new Date(repo.updated_at)
+            },
+            license: {
+                type: repo.license?.spdx_id || 'UNKNOWN',
+                url: repo.license?.url,
+                permissions: [],
+                limitations: []
+            },
+            copyrightStatus: {
+                isProtected: true,
+                creationDate: new Date(repo.created_at),
+                jurisdiction: 'Worldwide',
+                explanation: 'Software is automatically protected by copyright upon creation'
+            }
+        };
     }
 }
 

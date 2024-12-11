@@ -1,5 +1,20 @@
 // Types for software copyright detection and verification
 
+// Base metadata type for consistency
+export interface BaseMetadata {
+    timestamp: string;
+    requestId: string;
+    disclaimer?: string;
+    lastUpdated?: string;
+    totalCount?: number;
+    searchScore?: number;
+    rateLimit?: {
+        remaining: number;
+        reset: Date;
+    };
+}
+
+// Software copyright core type
 export interface SoftwareCopyright {
     id: string;
     name: string;
@@ -24,13 +39,9 @@ export interface SoftwareCopyright {
         jurisdiction: string;  // Usually 'Worldwide' due to Berne's Convention
         explanation: string;
     };
-    metadata: {
-        confidence: number;
-        matchSource: 'GITHUB';
-        lastChecked: Date;
-    };
 }
 
+// Search parameters
 export interface SoftwareSearchParams {
     query: string;
     page?: number;
@@ -41,40 +52,42 @@ export interface SoftwareSearchParams {
     minConfidence?: number;
 }
 
+// Search result metadata extends base metadata
+export interface SearchResultMetadata extends BaseMetadata {
+    totalCount: number;
+    searchScore: number;
+    query: string;
+    filters: Partial<SoftwareSearchParams>;
+    lastUpdated?: string;
+}
+
+// Search result type
 export interface SoftwareSearchResult {
-    matches: SoftwareCopyright[];
-    metadata: {
-        totalCount: number;
-        searchScore: number;
-        query: string;
-        filters: Partial<SoftwareSearchParams>;
-        disclaimer: string;
-        timestamp: Date;
-    };
+    matches: Array<SoftwareCopyright & {
+        confidence: number;
+        source: 'GITHUB';
+        details: string;
+        lastChecked: Date;
+    }>;
+    metadata: SearchResultMetadata;
 }
 
-export interface ApiError {
-    code: CopyrightErrorCode;
-    message: string;
-    details?: Record<string, unknown>;
-}
-
+// API response wrapper
 export interface ApiResponse<T> {
     success: boolean;
     data?: T;
-    error?: ApiError;
-    metadata?: {
-        timestamp: string;
-        requestId: string;
-        rateLimit?: {
-            remaining: number;
-            reset: Date;
-        };
-        disclaimer?: string;
-        totalCount?: number;
-        searchScore?: number;
-        lastUpdated?: string;
+    error?: {
+        code: CopyrightErrorCode;
+        message: string;
+        details?: Record<string, unknown>;
     };
+    metadata: BaseMetadata;
+}
+
+// Service interface aligned with implementation
+export interface CopyrightService {
+    searchCopyright(query: string): Promise<ApiResponse<SoftwareSearchResult>>;
+    getRepositoryDetails(owner: string, repo: string): Promise<ApiResponse<SoftwareSearchResult>>;
 }
 
 export enum CopyrightErrorCode {
@@ -85,17 +98,6 @@ export enum CopyrightErrorCode {
     GITHUB_API_ERROR = 'GITHUB_API_ERROR',
     CACHE_ERROR = 'CACHE_ERROR',
     UNKNOWN_ERROR = 'UNKNOWN_ERROR'
-}
-
-export interface PaginatedResponse<T> extends ApiResponse<T> {
-    pagination: {
-        currentPage: number;
-        totalPages: number;
-        totalItems: number;
-        itemsPerPage: number;
-        hasNextPage: boolean;
-        hasPreviousPage: boolean;
-    };
 }
 
 // Configuration types
@@ -121,7 +123,29 @@ export interface SearchConfig {
     MIN_QUERY_LENGTH: number;
 }
 
-export interface CopyrightService {
-    searchCopyright(query: string): Promise<ApiResponse<SoftwareSearchResult[]>>;
-    getRepositoryDetails(owner: string, repo: string): Promise<ApiResponse<SoftwareCopyright>>;
+// GitHub API specific types
+export interface GitHubRepository {
+    id: number;
+    name: string;
+    full_name: string;
+    private: boolean;
+    html_url: string;
+    description: string | null;
+    owner: {
+        login: string;
+        id: number;
+        html_url: string;
+    };
+    created_at: string;
+    updated_at: string;
+    stargazers_count: number;
+    license: {
+        key: string;
+        name: string;
+        spdx_id: string;
+        url: string;
+    } | null;
 }
+
+// Transform function type
+export type TransformGitHubData = (repo: GitHubRepository) => SoftwareCopyright;
