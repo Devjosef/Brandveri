@@ -19,6 +19,16 @@ const serviceEnvSchemas = {
     COPYRIGHT_API_URL: commonValidation.apiUrl,
     COPYRIGHT_API_KEY: commonValidation.apiKey,
     COPYRIGHT_SEARCH_TIMEOUT: z.number().min(1000).max(10000).default(5000),
+    GITHUB_TOKEN: z.string().min(1),
+    GITHUB_API_URL: z.string().url().default('https://api.github.com'),
+    GITHUB_MAX_ITEMS: z.number().min(1).max(100).default(100),
+    GITHUB_RETRY_ATTEMPTS: z.number().min(1).max(5).default(3),
+    GITHUB_RETRY_DELAY: z.number().min(100).max(5000).default(1000),
+    GITHUB_RATE_LIMIT: z.number().min(1).max(5000).default(5000),
+    GITHUB_TIMEOUT: z.number().min(1000).max(10000).default(5000),
+    CACHE_MAX_SIZE: z.number().min(100).max(10000).default(1000),
+    VALIDATION_MAX_QUERY_SIZE: z.number().min(128).max(2048).default(1024),
+    VALIDATION_MAX_PATH_SIZE: z.number().min(64).max(512).default(256)
   }),
 
   payment: z.object({
@@ -113,8 +123,25 @@ export const serviceConfig = {
     api: {
       url: env.COPYRIGHT_API_URL,
       key: env.COPYRIGHT_API_KEY,
-      timeout: env.COPYRIGHT_SEARCH_TIMEOUT,
+      timeout: env.COPYRIGHT_SEARCH_TIMEOUT
     },
+    github: {
+      token: env.GITHUB_TOKEN,
+      apiUrl: env.GITHUB_API_URL,
+      maxItems: env.GITHUB_MAX_ITEMS,
+      retryAttempts: env.GITHUB_RETRY_ATTEMPTS,
+      retryDelay: env.GITHUB_RETRY_DELAY,
+      rateLimit: env.GITHUB_RATE_LIMIT,
+      timeout: env.GITHUB_TIMEOUT
+    },
+    cache: {
+      ttl: env.CACHE_TTL,
+      maxSize: env.CACHE_MAX_SIZE
+    },
+    validation: {
+      maxQuerySize: env.VALIDATION_MAX_QUERY_SIZE,
+      maxPathSize: env.VALIDATION_MAX_PATH_SIZE
+    }
   },
   payment: {
     stripe: {

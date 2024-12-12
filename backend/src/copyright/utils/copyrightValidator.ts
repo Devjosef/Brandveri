@@ -1,151 +1,129 @@
 import { z } from 'zod';
-import { AuthError } from '../../../auth/utils/AuthError';
+import { CopyrightError } from './copyrightError';
 import { Counter, Histogram } from 'prom-client';
 import { loggers } from '../../../observability/contextLoggers';
+import { crConfig } from './crConfig';
+import { validatePayloadSize, sanitizeRequest } from '../../utils/requestValidators';
+import { invariant } from '../../utils/invariant';
+import { SoftwareSearchParams } from '../../../types/copyright';
 
 const logger = loggers.copyright;
 
 /**
- * Metrics for validation operations following established patterns.
+ * Metrics for validation operations
  */
 const validationMetrics = {
     operations: new Counter({
         name: 'copyright_validation_operations_total',
         help: 'Total number of copyright validation operations',
-        labelNames: ['operation', 'status', 'type']
+        labelNames: ['operation', 'status']
     }),
     duration: new Histogram({
         name: 'copyright_validation_duration_seconds',
         help: 'Duration of copyright validation operations',
-        labelNames: ['operation', 'type'],
+        labelNames: ['operation'],
         buckets: [0.001, 0.005, 0.01, 0.05, 0.1]
     })
 };
 
 /**
- * Core validation schema for copyright registration.
- * Following established patterns for formal specification.
+ * Search parameters validation schema
  */
-export const CopyrightRegistrationSchema = z.object({
-    title: z.string()
-        .min(1, 'Title is required')
-        .max(255)
+const searchParamsSchema = z.object({
+    query: z.string()
+        .min(crConfig.SEARCH.MIN_QUERY_LENGTH, 'Query too short')
+        .max(crConfig.VALIDATION.MAX_QUERY_SIZE, 'Query too long')
         .transform(str => str.trim()),
-    author: z.string()
-        .min(1, 'Author is required')
-        .max(255)
-        .transform(str => str.trim()),
-    registration_number: z.string()
-        .min(1, 'Registration number is required')
-        .regex(/^[A-Za-z0-9-]+$/, 'Invalid registration number format'),
-    registration_date: z.string()
-        .transform((str, ctx) => {
-            const date = new Date(str);
-            if (isNaN(date.getTime())) {
-                ctx.addIssue({
-                    code: z.ZodIssueCode.invalid_date,
-                    message: 'Invalid date format'
-                });
-                return z.NEVER;
-            }
-            return date;
-        })
-        .transform(date => date.toISOString()),
-    status: z.string().optional(),
-    country: z.string().optional()
-}).strict();
-
-/**
- * Validates copyright registration data.
- * Following principles for explicit error handling
- */
-export const validateCopyrightRegistration = async (data: unknown) => {
-    const timer = validationMetrics.duration.startTimer();
-    
-    try {
-        validationMetrics.operations.inc({ 
-            operation: 'validate', 
-            status: 'attempt',
-            type: 'registration' 
-        });
-
-        const result = await CopyrightRegistrationSchema.parseAsync(data);
-        
-        validationMetrics.operations.inc({ 
-            operation: 'validate', 
-            status: 'success',
-            type: 'registration' 
-        });
-        
-        return result;
-    } catch (error) {
-        validationMetrics.operations.inc({ 
-            operation: 'validate', 
-            status: 'error',
-            type: 'registration' 
-        });
-
-        logger.warn({ error, data }, 'Copyright validation failed');
-
-        if (error instanceof z.ZodError) {
-            throw new AuthError(
-                400,
-                error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '),
-                'VALIDATION_ERROR'
-            );
-        }
-        throw error;
-    } finally {
-        timer({ operation: 'validate', type: 'registration' });
-    }
-};
-
-/**
- * Search params validation schema.
- */
-export const CopyrightSearchSchema = z.object({
-    query: z.string().min(1, 'Search query is required'),
+    type: z.enum(['PROPRIETARY', 'OPEN_SOURCE', 'ALL']).optional(),
+    license: z.array(z.string()).optional(),
+    minStars: z.number().min(0).optional(),
+    minConfidence: z.number().min(0).max(1).optional(),
     page: z.number().int().positive().default(1),
     limit: z.number().int().positive().max(100).default(10)
 }).strict();
 
-export const validateSearchParams = async (data: unknown) => {
-    const timer = validationMetrics.duration.startTimer();
-    
-    try {
-        validationMetrics.operations.inc({ 
-            operation: 'validate', 
-            status: 'attempt',
-            type: 'search' 
-        });
-
-        const result = await CopyrightSearchSchema.parseAsync(data);
+export class CopyrightValidator {
+    /**
+     * Validates search query and parameters
+     */
+    validateSearchQuery(
+        query: string, 
+        params?: Partial<SoftwareSearchParams>
+    ): { query: string; params: SoftwareSearchParams } {
+        const timer = validationMetrics.duration.startTimer({ operation: 'search' });
         
-        validationMetrics.operations.inc({ 
-            operation: 'validate', 
-            status: 'success',
-            type: 'search' 
-        });
-        
-        return result;
-    } catch (error) {
-        validationMetrics.operations.inc({ 
-            operation: 'validate', 
-            status: 'error',
-            type: 'search' 
-        });
+        try {
+            validationMetrics.operations.inc({ operation: 'search', status: 'attempt' });
 
-        logger.warn({ error, data }, 'Search params validation failed');
+            // Basic input validation
+            invariant(query?.length > 0, 'Query is required');
+            validatePayloadSize(query, crConfig.VALIDATION.MAX_QUERY_SIZE);
+            
+            // Sanitize and validate query
+            const sanitizedQuery = sanitizeRequest({ query }).query as string;
+            
+            // Validate complete params
+            const validatedParams = searchParamsSchema.parse({
+                query: sanitizedQuery,
+                ...params
+            });
 
-        if (error instanceof z.ZodError) {
-            throw new AuthError(
-                400,
-                error.issues.map(issue => `${issue.path.join('.')}: ${issue.message}`).join('; '),
-                'VALIDATION_ERROR'
+            validationMetrics.operations.inc({ operation: 'search', status: 'success' });
+            return validatedParams;
+
+        } catch (error) {
+            validationMetrics.operations.inc({ operation: 'search', status: 'error' });
+            logger.warn({ error, query, params }, 'Search validation failed');
+            
+            throw new CopyrightError(
+                'VALIDATION_ERROR',
+                'Invalid search parameters',
+                { query, params, error }
             );
+        } finally {
+            timer();
         }
-        throw error;
-    } finally {
-        timer({ operation: 'validate', type: 'search' });
     }
-};
+
+    /**
+     * Validates repository parameters
+     */
+    validateRepoParams(owner: string, repo: string): { owner: string; repo: string } {
+        const timer = validationMetrics.duration.startTimer({ operation: 'repo' });
+        
+        try {
+            validationMetrics.operations.inc({ operation: 'repo', status: 'attempt' });
+
+            // Basic validation
+            invariant(owner?.length > 0, 'Owner is required');
+            invariant(repo?.length > 0, 'Repository name is required');
+            
+            // Size validation
+            validatePayloadSize(
+                owner + repo, 
+                crConfig.VALIDATION.MAX_PATH_SIZE
+            );
+
+            // Sanitize input
+            const sanitized = sanitizeRequest({ owner, repo });
+            
+            validationMetrics.operations.inc({ operation: 'repo', status: 'success' });
+            return {
+                owner: sanitized.owner as string,
+                repo: sanitized.repo as string
+            };
+
+        } catch (error) {
+            validationMetrics.operations.inc({ operation: 'repo', status: 'error' });
+            logger.warn({ error, owner, repo }, 'Repository validation failed');
+            
+            throw new CopyrightError(
+                'VALIDATION_ERROR',
+                'Invalid repository parameters',
+                { owner, repo, error }
+            );
+        } finally {
+            timer();
+        }
+    }
+}

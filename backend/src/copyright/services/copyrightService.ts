@@ -4,51 +4,49 @@ import { loggers } from '../../../observability/contextLoggers';
 import { copyrightCache } from '../../utils/cache';
 import { CopyrightError, CopyrightErrorCode } from '../utils/copyrightError';
 import { crConfig } from '../utils/crConfig';
-import { ApiResponse, SoftwareCopyright } from '../../../types/copyright';
-import { GitHubRepository} from '../../../types/copyright.d';
+import { 
+    ApiResponse, 
+    SoftwareCopyright, 
+    SoftwareSearchResult,
+    GitHubRepository,
+    ServiceHealth,
+    CopyrightMetrics
+} from '../../../types/copyright';
+import { CircuitBreaker } from '../../utils/circuitBreaker';
+import { RequestContext } from '../../utils/requestContext';
+import { validatePayloadSize, sanitizeRequest } from '../../utils/requestValidators';
+import { AsyncLock } from '../../utils/AsyncLock';
+import { invariant } from '../../utils/invariant';
 
 const logger = loggers.copyright;
 
-interface SoftwareSearchResult {
-    name: string;
-    type: 'PROPRIETARY' | 'OPEN_SOURCE' | 'UNKNOWN';
-    license: string;
-    repository: string;
-    publisher: string;
-    firstPublished: string;
-    copyrightStatus: {
-        isProtected: boolean;
-        creationDate: string;
-        jurisdiction: string;
-        explanation: string;
-    };
-    matches: {
-        source: 'GITHUB';
-        confidence: number;
-        details: string;
-    }[];
-}
-
 /**
  * Metrics for production monitoring
- * Reasoning: Track API usage, performance, and error rates
  */
 const softwareMetrics = {
     searches: new Counter({
         name: 'software_copyright_searches_total',
         help: 'Total number of software copyright searches',
-        labelNames: ['source', 'status', 'license_type']
+        labelNames: ['source', 'status', 'cache_hit']
     }),
     latency: new Histogram({
         name: 'software_copyright_search_duration_seconds',
         help: 'Duration of software copyright searches',
-        labelNames: ['source', 'cache_status'],
+        labelNames: ['operation', 'cache_status'],
         buckets: [0.1, 0.5, 1, 2, 5]
+    }),
+    errors: new Counter({
+        name: 'software_copyright_errors_total',
+        help: 'Total number of errors in copyright service',
+        labelNames: ['type', 'operation']
     })
 };
 
 class CopyrightService {
     private readonly github: Octokit;
+    private readonly circuitBreaker: CircuitBreaker;
+    private readonly searchLock: AsyncLock;
+    private readonly githubLock: AsyncLock;
 
     constructor() {
         this.github = new Octokit({
@@ -56,106 +54,169 @@ class CopyrightService {
             retry: {
                 enabled: true,
                 retries: crConfig.GITHUB.RETRY_ATTEMPTS
-            },
-            throttle: {
-                enabled: true,
-                onRateLimit: (retryAfter: number) => {
-                    logger.warn({ retryAfter }, 'GitHub API rate limit exceeded');
-                    return retryAfter < 60;
-                }
             }
         });
+
+        this.circuitBreaker = new CircuitBreaker('github-api', {
+            failureThreshold: 5,
+            resetTimeout: 30000
+        });
+
+        this.searchLock = new AsyncLock();
+        this.githubLock = new AsyncLock();
     }
 
     /**
      * Search for software copyright information
-     * Reasoning:
-     * 1. GitHub as a primary source for open-source software
-     * 2. Caching to optimize performance and manage rate limits
-     * 3. Detailed logging for monitoring and debugging
      */
-    async searchCopyright(query: string): Promise<ApiResponse<SoftwareSearchResult[]>> {
-        const timer = softwareMetrics.latency.startTimer();
-        const requestId = crypto.randomUUID(); // Generate unique request ID
+    async searchCopyright(query: string): Promise<ApiResponse<SoftwareSearchResult>> {
+        const context = RequestContext.getCurrentContext();
+        const requestId = context?.correlationId || crypto.randomUUID();
+        const timer = softwareMetrics.latency.startTimer({ operation: 'search' });
 
         try {
-            const cacheKey = `software:${query}`;
-            const cached = await copyrightCache.get<SoftwareSearchResult[]>(cacheKey);
+            // Input validation
+            invariant(query?.length >= crConfig.SEARCH.MIN_QUERY_LENGTH, 
+                'Query must be at least 3 characters long');
+            validatePayloadSize(query, crConfig.VALIDATION.MAX_QUERY_SIZE);
+            const sanitizedQuery = sanitizeRequest({ query }).query as string;
 
-            if (cached) {
-                softwareMetrics.searches.inc({ 
-                    source: 'cache', 
-                    status: 'hit',
-                    license_type: 'any'
-                });
-                return { 
-                    success: true, 
-                    data: cached,
-                    metadata: {
-                        timestamp: new Date().toISOString(),
-                        requestId,
-                        disclaimer: 'Results from cache. Software is automatically protected by copyright upon creation',
-                        lastUpdated: new Date().toISOString(),
-                    }
-                };
-            }
+            return await this.searchLock.acquire('search', async () => {
+                const cacheKey = `software:${sanitizedQuery}`;
+                const cached = await copyrightCache.get<SoftwareSearchResult>(cacheKey);
 
-            const { data } = await this.github.search.repos({
-                q: query,
-                per_page: crConfig.GITHUB.MAX_ITEMS_PER_SEARCH,
-                sort: 'stars'
-            });
-
-            const results = await this.enrichWithCopyrightInfo(data.items);
-            
-            // Cache results with TTL in seconds
-            await copyrightCache.set(
-                cacheKey, 
-                results, 
-                crConfig.CACHE.TTL  // Time-to-live in seconds
-            );
-
-            return { 
-                success: true, 
-                data: results,
-                metadata: {
-                    timestamp: new Date().toISOString(),
-                    requestId,
-                    disclaimer: 'Software is automatically protected by copyright upon creation. License type indicates usage rights, not copyright status.',
-                    lastUpdated: new Date().toISOString(),
-                    totalCount: data.total_count,
-                    searchScore: this.calculateSearchScore(results)
+                if (cached) {
+                    softwareMetrics.searches.inc({ 
+                        source: 'github', 
+                        status: 'success',
+                        cache_hit: 'true'
+                    });
+                    return this.createApiResponse(cached, requestId, 'Results from cache');
                 }
-            };
+
+                const results = await this.circuitBreaker.execute(async () => {
+                    return this.githubLock.acquire('github-api', async () => {
+                        const { data } = await this.github.search.repos({
+                            q: sanitizedQuery,
+                            per_page: crConfig.GITHUB.MAX_ITEMS_PER_SEARCH
+                        });
+                        return this.enrichWithCopyrightInfo(data.items);
+                    });
+                });
+
+                await copyrightCache.set(cacheKey, results, crConfig.CACHE.TTL);
+                softwareMetrics.searches.inc({ 
+                    source: 'github', 
+                    status: 'success',
+                    cache_hit: 'false'
+                });
+
+                return this.createApiResponse(results, requestId);
+            });
 
         } catch (error) {
-            softwareMetrics.searches.inc({ 
-                source: 'github', 
-                status: 'error',
-                license_type: 'unknown'
+            return this.handleError(error, {
+                operation: 'searchCopyright',
+                params: { query },
+                requestId
             });
-
-            // Ensure error is an object before logging it.
-            const errorDetails = error instanceof Error ? { message: error.message, stack: error.stack } : { error };
-
-            logger.error({ 
-                error: errorDetails, 
-                query,
-                requestId 
-            }, 'Software copyright search failed');
-            
-            throw new CopyrightError(
-                CopyrightErrorCode.SEARCH_ERROR,
-                'Failed to search software copyrights',
-                errorDetails
-            );
         } finally {
-            timer({ source: 'github', cache_status: 'miss' });
+            timer();
         }
     }
 
     /**
-     * Enrich repository data with license information
+     * Get repository details with copyright information
+     */
+    async getRepositoryDetails(
+        owner: string, 
+        repo: string
+    ): Promise<ApiResponse<SoftwareSearchResult>> {
+        const context = RequestContext.getCurrentContext();
+        const requestId = context?.correlationId || crypto.randomUUID();
+        const timer = softwareMetrics.latency.startTimer({ operation: 'getDetails' });
+
+        try {
+            validatePayloadSize(owner + repo, crConfig.VALIDATION.MAX_PATH_SIZE);
+            const sanitizedInput = sanitizeRequest({ owner, repo });
+            const sanitizedOwner = sanitizedInput.owner as string;
+            const sanitizedRepo = sanitizedInput.repo as string;
+
+            return await this.githubLock.acquire('github-api', async () => {
+                const results = await this.circuitBreaker.execute(async () => {
+                    const { data } = await this.github.repos.get({
+                        owner: sanitizedOwner,
+                        repo: sanitizedRepo
+                    });
+                    return this.transformGithubData(data);
+                });
+
+                return this.createApiResponse([results], requestId);
+            });
+
+        } catch (error) {
+            return this.handleError(error, {
+                operation: 'getRepositoryDetails',
+                params: { owner, repo },
+                requestId
+            });
+        } finally {
+            timer();
+        }
+    }
+
+    /**
+     * Get service health status
+     */
+    async getServiceHealth(): Promise<ServiceHealth> {
+        return {
+            isHealthy: !this.circuitBreaker.isOpen(),
+            lastCheck: new Date(),
+            failureCount: this.circuitBreaker.getFailureCount(),
+            rateLimitInfo: await this.getRateLimitInfo()
+        };
+    }
+
+    /**
+     * Get service metrics
+     */
+    getMetrics(): CopyrightMetrics {
+        return {
+            searchLatency: softwareMetrics.latency.get().values.sum,
+            cacheHitRate: this.calculateCacheHitRate(),
+            errorRate: softwareMetrics.errors.get().value,
+            rateLimitRemaining: 0, // Updated by getRateLimitInfo
+            totalRequests: softwareMetrics.searches.get().value,
+            activeRequests: this.searchLock.getPendingCount()
+        };
+    }
+
+    private async getRateLimitInfo() {
+        try {
+            const { data } = await this.github.rateLimit.get();
+            return {
+                remaining: data.rate.remaining,
+                reset: new Date(data.rate.reset * 1000),
+                limit: data.rate.limit
+            };
+        } catch (error) {
+            logger.error({ error }, 'Failed to get rate limit info');
+            return {
+                remaining: 0,
+                reset: new Date(),
+                limit: 0
+            };
+        }
+    }
+
+    private calculateCacheHitRate(): number {
+        const hits = softwareMetrics.searches.get({ cache_hit: 'true' }).value;
+        const total = softwareMetrics.searches.get().value;
+        return total ? hits / total : 0;
+    }
+
+    /**
+     * Enrich repository data with license information,
      * Reasoning: Provides immediate copyright status indication.
      */
     private async enrichWithCopyrightInfo(repos: any[]): Promise<SoftwareSearchResult[]> {
@@ -205,11 +266,11 @@ class CopyrightService {
     }
 
     /**
-     * Calculate match confidence based on repository metrics
+     * Calculate match confidence based on repository metrics.
      * Reasoning: 
-     * 1. Stars indicate project popularity and reliability
-     * 2. Age indicates project stability
-     * 3. License presence indicates proper copyright management
+     * 1. Stars indicate project popularity and reliability,
+     * 2. Age indicates project stability,
+     * 3. License presence indicates proper copyright management.
      */
     private calculateConfidence(repo: {
         stargazers_count: number;
@@ -217,10 +278,10 @@ class CopyrightService {
         license: { spdx_id: string } | null;
     }): number {
         const factors = {
-            stars: Math.min(repo.stargazers_count / 1000, 1),  // Max 1000 stars for full score
+            stars: Math.min(repo.stargazers_count / 1000, 1),  // Max 1000 stars for full score.
             age: Math.min(
                 (Date.now() - new Date(repo.created_at).getTime()) / 
-                (365 * 24 * 60 * 60 * 1000), // Convert to years
+                (365 * 24 * 60 * 60 * 1000), // Convert to years.
                 1
             ),
             hasLicense: repo.license ? 0.3 : 0
@@ -228,88 +289,11 @@ class CopyrightService {
 
         // Weight factors and ensure final score is between 0 and 1.
         return Math.min(
-            (factors.stars * 0.4) +    // 40% weight for popularity
-            (factors.age * 0.3) +      // 30% weight for project age
-            factors.hasLicense,         // 30% weight for license presence
+            (factors.stars * 0.4) +    // 40% weight for popularity,
+            (factors.age * 0.3) +      // 30% weight for project age,
+            factors.hasLicense,         // 30% weight for license presence.
             1
         );
-    }
-
-    /**
-     * Get repository details
-     * Reasoning: Extend existing service with repository details without breaking current functionality
-     */
-    async getRepositoryDetails(
-        owner: string, 
-        repo: string
-    ): Promise<ApiResponse<SoftwareSearchResult>> {
-        const requestId = crypto.randomUUID();
-
-        try {
-            const { data } = await this.github.repos.get({
-                owner,
-                repo
-            });
-            // Transform GitHub data to our format
-            const transformedData = this.transformGitHubData({
-                ...data,
-                license: data.license ? {
-                    key: data.license.key,
-                    name: data.license.name,
-                    spdx_id: data.license.spdx_id || '',
-                    url: data.license.url || ''
-                } : null
-            });
-
-            return {
-                success: true,
-                data: {
-                    matches: [{
-                        ...transformedData,
-                        confidence: this.calculateConfidence({
-                            stargazers_count: data.stargazers_count,
-                            created_at: data.created_at,
-                            license: data.license ? { spdx_id: data.license.spdx_id || '' } : null
-                        }),
-                        source: 'GITHUB',
-                        details: ''
-                    }],
-                    metadata: {
-                        totalCount: 1,
-                        searchScore: this.calculateConfidence({
-                            stargazers_count: data.stargazers_count,
-                            created_at: data.created_at,
-                            license: data.license ? { spdx_id: data.license.spdx_id || '' } : null
-                        }),
-                        query: `${owner}/${repo}`,
-                        filters: {},
-                        disclaimer: 'Software is automatically protected by copyright upon creation',
-                        timestamp: new Date().toISOString(),
-                        requestId,
-                        lastUpdated: new Date().toISOString()
-                    }
-                },
-                metadata: {
-                    timestamp: new Date().toISOString(),
-                    requestId,
-                    disclaimer: 'Software is automatically protected by copyright upon creation',
-                    lastUpdated: new Date().toISOString()
-                }
-            };
-        } catch (error) {
-            logger.error({ 
-                error,
-                owner,
-                repo,
-                requestId 
-            }, 'Failed to get repository details');
-
-            throw new CopyrightError(
-                CopyrightErrorCode.GITHUB_API_ERROR,
-                'Failed to fetch repository details',
-                { owner, repo }
-            );
-        }
     }
 
     private transformGitHubData(repo: GitHubRepository): SoftwareCopyright {
@@ -338,6 +322,60 @@ class CopyrightService {
                 explanation: 'Software is automatically protected by copyright upon creation'
             }
         };
+    }
+
+    private createApiResponse(data: SoftwareSearchResult[], requestId: string, disclaimer?: string): ApiResponse<SoftwareSearchResult> {
+        return {
+            success: true,
+            data: {
+                matches: [{
+                    ...data[0],
+                    confidence: this.calculateConfidence(data[0]),
+                    source: 'GITHUB',
+                    details: ''
+                }],
+                metadata: {
+                    totalCount: data.length,
+                    searchScore: this.calculateConfidence(data[0]),
+                    query: `${data[0].publisher}/${data[0].name}`,
+                    filters: {},
+                    disclaimer: disclaimer || 'Software is automatically protected by copyright upon creation',
+                    timestamp: new Date().toISOString(),
+                    requestId,
+                    lastUpdated: new Date().toISOString()
+                }
+            },
+            metadata: {
+                timestamp: new Date().toISOString(),
+                requestId,
+                disclaimer: 'Software is automatically protected by copyright upon creation',
+                lastUpdated: new Date().toISOString()
+            }
+        };
+    }
+
+    private handleError(error: Error, context: { operation: string, params: any }): ApiResponse<SoftwareSearchResult> {
+        softwareMetrics.searches.inc({ 
+            source: 'github', 
+            status: 'error',
+            license_type: 'unknown'
+        });
+
+        // Ensure error is an object before logging it.
+        const errorDetails = error instanceof Error ? { message: error.message, stack: error.stack } : { error };
+
+        logger.error({ 
+            error: errorDetails, 
+            operation: context.operation,
+            params: context.params,
+            requestId: context.requestId 
+        }, 'Software copyright search failed');
+        
+        throw new CopyrightError(
+            CopyrightErrorCode.SEARCH_ERROR,
+            'Failed to search software copyrights',
+            errorDetails
+        );
     }
 }
 

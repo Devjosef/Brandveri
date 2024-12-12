@@ -1,20 +1,51 @@
 // Types for software copyright detection and verification
 
-// Base metadata type for consistency
+// Core metadata types for monitoring and tracking
+export interface RateLimitInfo {
+    remaining: number;
+    reset: Date;
+    limit: number;
+}
+
+export interface ServiceHealth {
+    isHealthy: boolean;
+    lastCheck: Date;
+    failureCount: number;
+    rateLimitInfo: RateLimitInfo;
+}
+
+export interface CopyrightMetrics {
+    searchLatency: number;
+    cacheHitRate: number;
+    errorRate: number;
+    rateLimitRemaining: number;
+    totalRequests: number;
+    activeRequests: number;
+}
+
+// Cache management
+export interface CacheEntry<T> {
+    data: T;
+    timestamp: Date;
+    expiresAt: Date;
+    isStale: boolean;
+}
+
+// Base metadata for all responses
 export interface BaseMetadata {
     timestamp: string;
     requestId: string;
     disclaimer?: string;
     lastUpdated?: string;
-    totalCount?: number;
-    searchScore?: number;
-    rateLimit?: {
-        remaining: number;
-        reset: Date;
+    performance?: {
+        duration: number;
+        cacheHit: boolean;
+        rateLimitRemaining: number;
     };
+    source: 'CACHE' | 'GITHUB' | 'FALLBACK';
 }
 
-// Software copyright core type
+// Core software copyright type
 export interface SoftwareCopyright {
     id: string;
     name: string;
@@ -36,12 +67,17 @@ export interface SoftwareCopyright {
     copyrightStatus: {
         isProtected: boolean;  // Always true for software
         creationDate: Date;
-        jurisdiction: string;  // Usually 'Worldwide' due to Berne's Convention
+        jurisdiction: string;  // Usually 'Worldwide' due to Berne's Convention.
         explanation: string;
+    };
+    validationStatus: {
+        isValid: boolean;
+        errors?: string[];
+        lastValidated: Date;
     };
 }
 
-// Search parameters
+// Search parameters with validation
 export interface SoftwareSearchParams {
     query: string;
     page?: number;
@@ -50,18 +86,24 @@ export interface SoftwareSearchParams {
     license?: string[];  // SPDX identifiers
     minStars?: number;
     minConfidence?: number;
+    validateLicenses?: boolean;
 }
 
-// Search result metadata extends base metadata
+// API Response metadata
+export interface ApiResponseMetadata extends BaseMetadata {
+    serviceHealth?: ServiceHealth;
+    metrics?: Partial<CopyrightMetrics>;
+}
+
+// Search result metadata
 export interface SearchResultMetadata extends BaseMetadata {
     totalCount: number;
     searchScore: number;
     query: string;
     filters: Partial<SoftwareSearchParams>;
-    lastUpdated?: string;
 }
 
-// Search result type
+// Software search result with enhanced tracking
 export interface SoftwareSearchResult {
     matches: Array<SoftwareCopyright & {
         confidence: number;
@@ -70,26 +112,39 @@ export interface SoftwareSearchResult {
         lastChecked: Date;
     }>;
     metadata: SearchResultMetadata;
+    stats?: CopyrightMetrics;
 }
 
-// API response wrapper
+// API response wrapper with enhanced error handling
 export interface ApiResponse<T> {
     success: boolean;
-    data?: T;
+    data: T;
     error?: {
         code: CopyrightErrorCode;
         message: string;
         details?: Record<string, unknown>;
+        retryAfter?: number;
+        suggestion?: string;
     };
-    metadata: BaseMetadata;
+    metadata: ApiResponseMetadata;
 }
 
-// Service interface aligned with implementation
+// Enhanced service interface
 export interface CopyrightService {
-    searchCopyright(query: string): Promise<ApiResponse<SoftwareSearchResult>>;
+    // Core operations
+    searchCopyright(query: string, params?: Partial<SoftwareSearchParams>): Promise<ApiResponse<SoftwareSearchResult>>;
     getRepositoryDetails(owner: string, repo: string): Promise<ApiResponse<SoftwareSearchResult>>;
+    
+    // Health and monitoring
+    getServiceHealth(): Promise<ServiceHealth>;
+    getMetrics(): CopyrightMetrics;
+    
+    // Cache operations
+    clearCache(): Promise<void>;
+    refreshCache(query: string): Promise<void>;
 }
 
+// Error handling
 export enum CopyrightErrorCode {
     SEARCH_ERROR = 'SEARCH_ERROR',
     VALIDATION_ERROR = 'VALIDATION_ERROR',
@@ -97,10 +152,17 @@ export enum CopyrightErrorCode {
     NOT_FOUND = 'NOT_FOUND',
     GITHUB_API_ERROR = 'GITHUB_API_ERROR',
     CACHE_ERROR = 'CACHE_ERROR',
+    CIRCUIT_BREAKER_ERROR = 'CIRCUIT_BREAKER_ERROR',
     UNKNOWN_ERROR = 'UNKNOWN_ERROR'
 }
 
 // Configuration types
+export interface ValidationConfig {
+    maxQuerySize: number;
+    maxPathSize: number;
+    allowedLicenses: string[];  // SPDX identifiers.
+}
+
 export interface GithubConfig {
     TOKEN: string;
     RATE_LIMIT: number;
@@ -123,7 +185,7 @@ export interface SearchConfig {
     MIN_QUERY_LENGTH: number;
 }
 
-// GitHub API specific types
+// GitHub API interface with repository pattern.
 export interface GitHubRepository {
     id: number;
     name: string;
@@ -145,6 +207,11 @@ export interface GitHubRepository {
         spdx_id: string;
         url: string;
     } | null;
+    
+    // Repository pattern methods.
+    getDetails(owner: string, repo: string): Promise<SoftwareCopyright>;
+    searchRepositories(query: string): Promise<SoftwareSearchResult>;
+    getRateLimit(): Promise<RateLimitInfo>;
 }
 
 // Transform function type
