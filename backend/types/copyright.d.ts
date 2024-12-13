@@ -129,19 +129,69 @@ export interface ApiResponse<T> {
     metadata: ApiResponseMetadata;
 }
 
-// Enhanced service interface
-export interface CopyrightService {
-    // Core operations
-    searchCopyright(query: string, params?: Partial<SoftwareSearchParams>): Promise<ApiResponse<SoftwareSearchResult>>;
-    getRepositoryDetails(owner: string, repo: string): Promise<ApiResponse<SoftwareSearchResult>>;
+// GitHub Utility types
+export interface GitHubUtilityConfig {
+    token: string;
+    baseUrl: string;
+    timeout: number;
+    retryAttempts: number;
+    retryDelay: number;
+    maxItemsPerSearch: number;
+}
+
+export interface GitHubUtility {
+    search(query: string): Promise<GitHubRepository[]>;
+    getRepository(owner: string, repo: string): Promise<GitHubRepository>;
+    getHealth(): Promise<ServiceHealth>;
+    getMetrics(): Partial<CopyrightMetrics>;
+}
+
+// Transformer Utility types
+export interface CopyrightTransformer {
+    transformGithubData(repo: GitHubRepository): SoftwareCopyright;
+    createApiResponse<T>(data: T, requestId: string): ApiResponse<T>;
+}
+
+// Validator Utility types
+export interface CopyrightValidator {
+    validateSearchQuery(
+        query: string, 
+        params?: Partial<SoftwareSearchParams>
+    ): { query: string; params: SoftwareSearchParams };
     
-    // Health and monitoring
+    validateRepoParams(
+        owner: string, 
+        repo: string
+    ): { owner: string; repo: string };
+}
+
+// Update the CopyrightService interface to reflect utility usage
+export interface CopyrightService {
+    // Core operations with utility dependencies
+    readonly github: GitHubUtility;
+    readonly transformer: CopyrightTransformer;
+    readonly validator: CopyrightValidator;
+
+    searchCopyright(
+        query: string, 
+        params?: Partial<SoftwareSearchParams>
+    ): Promise<ApiResponse<SoftwareSearchResult>>;
+    
+    getRepositoryDetails(
+        owner: string, 
+        repo: string
+    ): Promise<ApiResponse<SoftwareSearchResult>>;
+    
     getServiceHealth(): Promise<ServiceHealth>;
     getMetrics(): CopyrightMetrics;
-    
-    // Cache operations
-    clearCache(): Promise<void>;
-    refreshCache(query: string): Promise<void>;
+}
+
+// Operation Context type for better error handling
+export interface OperationContext {
+    operation: string;
+    requestId: string;
+    params?: Record<string, unknown>;
+    startTime?: number;
 }
 
 // Error handling
@@ -207,12 +257,4 @@ export interface GitHubRepository {
         spdx_id: string;
         url: string;
     } | null;
-    
-    // Repository pattern methods.
-    getDetails(owner: string, repo: string): Promise<SoftwareCopyright>;
-    searchRepositories(query: string): Promise<SoftwareSearchResult>;
-    getRateLimit(): Promise<RateLimitInfo>;
 }
-
-// Transform function type
-export type TransformGitHubData = (repo: GitHubRepository) => SoftwareCopyright;

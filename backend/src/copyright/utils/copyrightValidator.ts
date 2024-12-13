@@ -1,30 +1,13 @@
+import { DataValidator } from '../../utils/validators';
+import { sanitizeRequest } from '../../utils/requestValidators';
 import { z } from 'zod';
-import { CopyrightError } from './copyrightError';
-import { Counter, Histogram } from 'prom-client';
+import { CopyrightError, CopyrightErrorCode } from './copyrightError';
 import { loggers } from '../../../observability/contextLoggers';
+import { SoftwareCopyright, SoftwareSearchParams } from '../../../types/copyright';
 import { crConfig } from './crConfig';
-import { validatePayloadSize, sanitizeRequest } from '../../utils/requestValidators';
 import { invariant } from '../../utils/invariant';
-import { SoftwareSearchParams } from '../../../types/copyright';
 
 const logger = loggers.copyright;
-
-/**
- * Metrics for validation operations
- */
-const validationMetrics = {
-    operations: new Counter({
-        name: 'copyright_validation_operations_total',
-        help: 'Total number of copyright validation operations',
-        labelNames: ['operation', 'status']
-    }),
-    duration: new Histogram({
-        name: 'copyright_validation_duration_seconds',
-        help: 'Duration of copyright validation operations',
-        labelNames: ['operation'],
-        buckets: [0.001, 0.005, 0.01, 0.05, 0.1]
-    })
-};
 
 /**
  * Search parameters validation schema
@@ -42,88 +25,141 @@ const searchParamsSchema = z.object({
     limit: z.number().int().positive().max(100).default(10)
 }).strict();
 
+/**
+ * Transformed data validation schema
+ */
+const transformedDataSchema = z.object({
+    id: z.string().min(1, 'ID is required'),
+    name: z.string().min(1, 'Name is required'),
+    type: z.enum(['PROPRIETARY', 'OPEN_SOURCE', 'UNKNOWN']),
+    repository: z.object({
+        url: z.string().url('Invalid repository URL'),
+        owner: z.string().min(1, 'Owner is required'),
+        name: z.string().min(1, 'Repository name is required'),
+        stars: z.number().min(0, 'Stars must be non-negative'),
+        createdAt: z.date(),
+        lastUpdated: z.date()
+    }),
+    license: z.object({
+        type: z.string(),
+        url: z.string().url().optional(),
+        permissions: z.array(z.string()).optional(),
+        limitations: z.array(z.string()).optional()
+    }),
+    copyrightStatus: z.object({
+        isProtected: z.boolean(),
+        creationDate: z.date(),
+        jurisdiction: z.string(),
+        explanation: z.string()
+    }),
+    validationStatus: z.object({
+        isValid: z.boolean(),
+        errors: z.array(z.string()).optional(),
+        lastValidated: z.date()
+    })
+}).strict();
+
 export class CopyrightValidator {
-    /**
-     * Validates search query and parameters
-     */
     validateSearchQuery(
         query: string, 
         params?: Partial<SoftwareSearchParams>
     ): { query: string; params: SoftwareSearchParams } {
-        const timer = validationMetrics.duration.startTimer({ operation: 'search' });
-        
         try {
-            validationMetrics.operations.inc({ operation: 'search', status: 'attempt' });
-
-            // Basic input validation
             invariant(query?.length > 0, 'Query is required');
-            validatePayloadSize(query, crConfig.VALIDATION.MAX_QUERY_SIZE);
+            DataValidator.validateSize(query, crConfig.VALIDATION.MAX_QUERY_SIZE);
             
-            // Sanitize and validate query
             const sanitizedQuery = sanitizeRequest({ query }).query as string;
             
-            // Validate complete params
             const validatedParams = searchParamsSchema.parse({
                 query: sanitizedQuery,
                 ...params
             });
 
-            validationMetrics.operations.inc({ operation: 'search', status: 'success' });
-            return validatedParams;
+            return {
+                query: validatedParams.query,
+                params: {
+                    query: validatedParams.query,
+                    type: validatedParams.type,
+                    license: validatedParams.license,
+                    minStars: validatedParams.minStars,
+                    minConfidence: validatedParams.minConfidence,
+                    page: validatedParams.page,
+                    limit: validatedParams.limit
+                }
+            };
 
         } catch (error) {
-            validationMetrics.operations.inc({ operation: 'search', status: 'error' });
             logger.warn({ error, query, params }, 'Search validation failed');
-            
             throw new CopyrightError(
-                'VALIDATION_ERROR',
+                CopyrightErrorCode.VALIDATION_ERROR,
                 'Invalid search parameters',
                 { query, params, error }
             );
-        } finally {
-            timer();
         }
     }
 
-    /**
-     * Validates repository parameters
-     */
     validateRepoParams(owner: string, repo: string): { owner: string; repo: string } {
-        const timer = validationMetrics.duration.startTimer({ operation: 'repo' });
-        
         try {
-            validationMetrics.operations.inc({ operation: 'repo', status: 'attempt' });
-
-            // Basic validation
             invariant(owner?.length > 0, 'Owner is required');
             invariant(repo?.length > 0, 'Repository name is required');
             
-            // Size validation
-            validatePayloadSize(
+            DataValidator.validateSize(
                 owner + repo, 
                 crConfig.VALIDATION.MAX_PATH_SIZE
             );
-
-            // Sanitize input
+            
             const sanitized = sanitizeRequest({ owner, repo });
             
-            validationMetrics.operations.inc({ operation: 'repo', status: 'success' });
             return {
                 owner: sanitized.owner as string,
                 repo: sanitized.repo as string
             };
 
         } catch (error) {
-            validationMetrics.operations.inc({ operation: 'repo', status: 'error' });
             logger.warn({ error, owner, repo }, 'Repository validation failed');
-            
             throw new CopyrightError(
-                'VALIDATION_ERROR',
+                CopyrightErrorCode.VALIDATION_ERROR,
                 'Invalid repository parameters',
                 { owner, repo, error }
             );
-        } finally {
-            timer();
+        }
+    }
+
+    validateTransformedData(data: unknown): SoftwareCopyright {
+        try {
+            const sanitizedData = sanitizeRequest(data);
+            const validatedData = transformedDataSchema.parse(sanitizedData);
+            this.validateBusinessRules(validatedData);
+            return validatedData;
+
+        } catch (error) {
+            logger.error({ error, data }, 'Transformed data validation failed');
+            throw new CopyrightError(
+                CopyrightErrorCode.VALIDATION_ERROR,
+                'Invalid transformed data',
+                { data, error }
+            );
+        }
+    }
+
+    private validateBusinessRules(data: SoftwareCopyright): void {
+        if (data.repository.lastUpdated < data.repository.createdAt) {
+            throw new CopyrightError(
+                CopyrightErrorCode.VALIDATION_ERROR,
+                'Last updated date cannot be before creation date',
+                { 
+                    createdAt: data.repository.createdAt,
+                    lastUpdated: data.repository.lastUpdated 
+                }
+            );
+        }
+
+        if (data.type === 'OPEN_SOURCE' && data.license.type === 'UNKNOWN') {
+            throw new CopyrightError(
+                CopyrightErrorCode.VALIDATION_ERROR,
+                'Open source repository must have a valid license',
+                { type: data.type, license: data.license }
+            );
         }
     }
 }
