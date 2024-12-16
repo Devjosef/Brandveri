@@ -4,6 +4,7 @@ import { serviceConfig } from '../../utils/env';
 /** Github Configuration Schema */
 const githubConfigSchema = z.object({
     TOKEN: z.string().min(1, 'GITHUB_TOKEN is required'),
+    BASE_URL: z.string().default('https://api.github.com'),
     RATE_LIMIT: z.coerce.number().default(serviceConfig.copyright.github.rateLimit),
     TIMEOUT: z.coerce.number().default(serviceConfig.copyright.github.timeout),
     MAX_ITEMS_PER_SEARCH: z.coerce.number().default(serviceConfig.copyright.github.maxItems),
@@ -50,6 +51,7 @@ const crConfigSchema = z.object({
 const envVars = {
     GITHUB: {
         TOKEN: serviceConfig.copyright.github.token,
+        BASE_URL: 'https://api.github.com',
         RATE_LIMIT: serviceConfig.copyright.github.rateLimit,
         TIMEOUT: serviceConfig.copyright.github.timeout,
         MAX_ITEMS_PER_SEARCH: serviceConfig.copyright.github.maxItems,
