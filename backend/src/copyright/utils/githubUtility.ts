@@ -1,106 +1,207 @@
-import { Octokit } from '@octokit/rest';
-import { AsyncLock } from '../../utils/asyncLock';
+import axios, { AxiosInstance, AxiosError, RawAxiosResponseHeaders, AxiosResponseHeaders } from "axios";
 import { CircuitBreaker } from '../../utils/circuitBreaker';
-import { crConfig } from './crConfig';
-import { GitHubRepository } from '../../../types/copyright';
-import { CopyrightError, CopyrightErrorCode } from './copyrightError';
+import { Counter, Histogram, Gauge } from 'prom-client';
+import { LRUCache } from 'lru-cache';
+import { loggers } from '../../../observability/contextLoggers';
+import { 
+    GitHubConfig,
+} from '../../../types/github';
+
+const logger = loggers.copyright;
 
 export class GitHubUtility {
-    private readonly github: Octokit;
-    private readonly lock: AsyncLock;
+    private readonly client: AxiosInstance;
     private readonly circuitBreaker: CircuitBreaker;
+    private readonly cache: LRUCache<string, any>;
+    private readonly metrics = {
+        requests: new Counter({
+            name: 'github_requests_total',
+            help: 'Total GitHub API requests',
+            labelNames: ['method']
+        }),
+        errors: new Counter({
+            name: 'github_errors_total',
+            help: 'Total GitHub API errors',
+            labelNames: ['type']
+        }),
+        duration: new Histogram({
+            name: 'github_request_duration_seconds',
+            help: 'GitHub API request duration',
+            labelNames: ['method']
+        }),
+        rateLimit: new Gauge({
+            name: 'github_rate_limit_remaining',
+            help: 'GitHub API rate limit remaining'
+        })
+    };
 
-    constructor() {
-        this.github = new Octokit({
-            auth: crConfig.GITHUB.TOKEN,
-            baseUrl: crConfig.GITHUB.BASE_URL,
-            request: {
-                timeout: crConfig.GITHUB.TIMEOUT
-            }
+    constructor(config: GitHubConfig) {
+        this.validateConfig(config);
+        
+        this.client = axios.create({
+            baseURL: config.baseUrl,
+            headers: {
+                Authorization: `Bearer ${config.token}`,
+                Accept: 'application/vnd.github.v3+json'
+            },
+            timeout: 10000 // 10 seconds
         });
         
-        this.lock = new AsyncLock();
         this.circuitBreaker = new CircuitBreaker('github-api', {
-            failureThreshold: crConfig.GITHUB.RETRY_ATTEMPTS,
-            resetTimeout: crConfig.GITHUB.RETRY_DELAY
+            failureThreshold: config.retry?.attempts || 3,
+            resetTimeout: config.retry?.backoff ? 60000 : 30000
+        });
+        this.cache = new LRUCache({
+            max: 500,
+            ttl: 1000 * 60 * 5
         });
     }
 
-    async search(query: string): Promise<GitHubRepository[]> {
-        try {
-            const response = await this.lock.acquire('github-search', () => 
-                this.circuitBreaker.execute(() => 
-                    this.github.search.repos({
-                        q: query,
-                        per_page: crConfig.GITHUB.MAX_ITEMS_PER_SEARCH
-                    })
-                )
-            );
-
-            if (!response?.data?.items) {
-                throw new CopyrightError(
-                    CopyrightErrorCode.GITHUB_API_ERROR,
-                    'Invalid GitHub search response'
-                );
-            }
-
-            return this.transformRepositories(response.data.items);
-        } catch (error) {
-            throw new CopyrightError(
-                CopyrightErrorCode.GITHUB_API_ERROR,
-                'GitHub search failed',
-                { query, error }
-            );
+    private validateConfig(config: GitHubConfig): void {
+        if (!config.token) {
+            throw new Error('GitHub token is required');
+        }
+        if (!config.baseUrl) {
+            throw new Error('GitHub base URL is required');
         }
     }
 
-    async getRepository(owner: string, repo: string): Promise<GitHubRepository> {
-        try {
-            const response = await this.lock.acquire('github-repo', () => 
-                this.circuitBreaker.execute(() => 
-                    this.github.repos.get({ owner, repo })
-                )
-            );
+    private updateRateLimitMetrics(headers: RawAxiosResponseHeaders | AxiosResponseHeaders): void {
+        const remaining = parseInt(String(headers['x-ratelimit-remaining'] || '0'), 10);
+        this.metrics.rateLimit.set(remaining);
 
-            if (!response?.data) {
-                throw new CopyrightError(
-                    CopyrightErrorCode.GITHUB_API_ERROR,
-                    'Invalid GitHub repository response'
-                );
-            }
-
-            return this.transformRepository(response.data);
-        } catch (error) {
-            throw new CopyrightError(
-                CopyrightErrorCode.GITHUB_API_ERROR,
-                'GitHub repository fetch failed',
-                { owner, repo, error }
-            );
+        const resetTime = parseInt(String(headers['x-ratelimit-reset'] || '0'), 10);
+        if (resetTime) {
+            const now = Date.now() / 1000;
+            const timeToReset = Math.max(0, resetTime - now);
+            logger.debug({ 
+                remaining, 
+                resetTime: new Date(resetTime * 1000), 
+                timeToReset 
+            }, 'GitHub rate limit update');
         }
     }
 
-    private transformRepository(data: any): GitHubRepository {
-        if (!data.id || !data.name || !data.owner) {
-            throw new CopyrightError(
-                CopyrightErrorCode.GITHUB_API_ERROR,
-                'Invalid repository data'
-            );
-        }
+    private handleRateLimit(headers: RawAxiosResponseHeaders | AxiosResponseHeaders | undefined): void {
+        if (!headers) return;
 
+        const resetTime = parseInt(String(headers['x-ratelimit-reset'] || '0'), 10);
+        if (resetTime) {
+            const now = Date.now() / 1000;
+            const timeToReset = Math.max(0, resetTime - now);
+            
+            logger.warn({
+                resetTime: new Date(resetTime * 1000),
+                timeToReset,
+                remaining: parseInt(String(headers['x-ratelimit-remaining'] || '0'), 10)
+            }, 'GitHub API rate limit exceeded');
+
+            if (timeToReset > 0) {
+                this.metrics.errors.inc({ type: 'RATE_LIMIT' });
+                throw new Error(`Rate limit exceeded. Resets in ${Math.ceil(timeToReset)} seconds`);
+            }
+        }
+    }
+
+    async fetchRepoContent(owner: string, repo: string, path: string): Promise<any> {
+        const cacheKey = `${owner}/${repo}/${path}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached) return cached;
+
+        const timer = this.metrics.duration.startTimer();
+        
+        try {
+            const result = await this.circuitBreaker.execute(() => 
+                this.client.get(`/repos/${owner}/${repo}/contents/${path}`)
+            );
+            
+            this.metrics.requests.inc({ method: 'fetchRepoContent' });
+            this.updateRateLimitMetrics(result.headers);
+            
+            this.cache.set(cacheKey, result.data);
+            return result.data;
+        } catch (error) {
+            this.handleApiError(error as AxiosError, 'fetchRepoContent');
+            throw error;
+        } finally {
+            timer();
+        }
+    }
+
+    async getRepository(owner: string, repo: string): Promise<any> {
+        const cacheKey = `${owner}/${repo}`;
+        const cached = this.cache.get(cacheKey);
+        if (cached) return cached;
+
+        const timer = this.metrics.duration.startTimer();
+        
+        try {
+            const result = await this.circuitBreaker.execute(() => 
+                this.client.get(`/repos/${owner}/${repo}`)
+            );
+            
+            this.metrics.requests.inc({ method: 'getRepository' });
+            this.updateRateLimitMetrics(result.headers);
+            
+            this.cache.set(cacheKey, result.data);
+            return result.data;
+        } catch (error) {
+            this.handleApiError(error as AxiosError, 'getRepository');
+            throw error;
+        } finally {
+            timer();
+        }
+    }
+
+    private handleApiError(error: AxiosError, context: string): void {
+        const errorType = this.classifyError(error);
+        this.metrics.errors.inc({ type: errorType });
+        
+        logger.error({
+            error,
+            context,
+            type: errorType,
+            status: error.response?.status,
+            data: error.response?.data
+        }, 'GitHub API Error');
+
+        if (errorType === 'RATE_LIMIT') {
+            this.handleRateLimit(error.response?.headers);
+        }
+    }
+
+    private classifyError(error: AxiosError): string {
+        if (error.response?.status === 429) return 'RATE_LIMIT';
+        if (error.response?.status === 404) return 'NOT_FOUND';
+        if (error.response?.status === 401) return 'UNAUTHORIZED';
+        return 'UNKNOWN';
+    }
+
+    async getHealth(): Promise<any> {
+        try {
+            const rateLimit = await this.client.get('/rate_limit');
+            return {
+                isHealthy: true,
+                lastCheck: new Date(),
+                rateLimitInfo: rateLimit.data.resources.core
+            };
+        } catch (error) {
+            return {
+                isHealthy: false,
+                lastCheck: new Date(),
+                error: (error as Error).message
+            };
+        }
+    }
+
+    getMetrics(): any {
         return {
-            id: data.id,
-            name: data.name,
-            owner: data.owner.login,
-            url: data.html_url,
-            description: data.description,
-            stars: data.stargazers_count,
-            license: data.license?.spdx_id || 'UNKNOWN',
-            createdAt: new Date(data.created_at),
-            updatedAt: new Date(data.updated_at)
+            requests: this.metrics.requests.get(),
+            errors: this.metrics.errors.get(),
+            rateLimit: this.metrics.rateLimit.get(),
+            duration: this.metrics.duration.get()
         };
     }
-
-    private transformRepositories(items: any[]): GitHubRepository[] {
-        return items.map(item => this.transformRepository(item));
-    }
 }
+
+
