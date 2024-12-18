@@ -11,6 +11,8 @@ export interface GitHubConfig {
         attempts: number;
         backoff: boolean;
     };
+    timeout?: number;
+    maxItemsPerSearch?: number;
 }
 
 export interface GitHubRateLimit {
@@ -18,6 +20,54 @@ export interface GitHubRateLimit {
     remaining: number;
     reset: number;
     used: number;
+}
+
+export interface ValidationConfig {
+    maxQuerySize: number;
+    maxPathSize: number;
+    allowedLicenses: string[];  // SPDX identifiers (System Package Data Exchange).
+}
+
+export interface GitHubSearchResponse<T> {
+    total_count: number;
+    incomplete_results: boolean;
+    items: T[];
+}
+
+export interface GitHubMetrics {
+    requests: {
+        total: number;
+        successful: number;
+        failed: number;
+    };
+    rateLimit: GitHubRateLimit;
+    latency: {
+        avg: number;
+        p95: number;
+        p99: number;
+    };
+    cache: {
+        hits: number;
+        misses: number;
+        size: number;
+    };
+}
+
+export interface GitHubUtilityInterface {
+    search(query: string, options?: GitHubSearchOptions): Promise<GitHubRepository[]>;
+    getRepository(owner: string, repo: string): Promise<GitHubRepository>;
+    getContent(owner: string, repo: string, path: string): Promise<GitHubContent>;
+    getHealth(): Promise<GitHubServiceHealth>;
+    getMetrics(): GitHubMetrics;
+    getRateLimit(): Promise<GitHubRateLimit>;
+}
+
+export interface GitHubSearchOptions {
+    page?: number;
+    perPage?: number;
+    sort?: 'stars' | 'forks' | 'updated';
+    order?: 'asc' | 'desc';
+    type?: 'all' | 'public' | 'private';
 }
 
 export interface GitHubError {
@@ -35,20 +85,6 @@ export enum GitHubErrorType {
     VALIDATION = 'VALIDATION',
     NETWORK = 'NETWORK',
     UNKNOWN = 'UNKNOWN'
-}
-
-export interface GitHubMetrics {
-    requests: {
-        total: number;
-        successful: number;
-        failed: number;
-    };
-    rateLimit: GitHubRateLimit;
-    latency: {
-        avg: number;
-        p95: number;
-        p99: number;
-    };
 }
 
 export interface GitHubRepository {
@@ -98,14 +134,6 @@ export interface GitHubApiResponse<T> {
     headers: Record<string, string>;
 }
 
-export interface GitHubUtilityInterface {
-    fetchRepoContent(owner: string, repo: string, path: string): Promise<GitHubContent>;
-    getRepository(owner: string, repo: string): Promise<GitHubRepository>;
-    getMetrics(): GitHubMetrics;
-    getRateLimit(): Promise<GitHubRateLimit>;
-    isHealthy(): Promise<boolean>;
-}
-
 // Cache types
 export interface CacheConfig {
     max: number;
@@ -144,4 +172,11 @@ export interface RequestMetrics {
     method: string;
     path: string;
     timestamp: number;
+}
+
+export interface GitHubServiceHealth {
+    isHealthy: boolean;
+    lastCheck: Date;
+    failureCount: number;
+    rateLimitInfo: GitHubRateLimit;
 }

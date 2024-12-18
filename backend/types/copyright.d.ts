@@ -1,20 +1,24 @@
-// Types for software copyright detection and verification
+import { 
+    GitHubRepository, 
+    GitHubServiceHealth, 
+    GitHubMetrics,
+    GitHubUtilityInterface
+} from './github';
 
-// Core metadata types for monitoring and tracking
+// Core metadata types for monitoring and tracking, related to copyrights.
 export interface RateLimitInfo {
     remaining: number;
     reset: Date;
     limit: number;
 }
 
-export interface ServiceHealth {
-    isHealthy: boolean;
+export interface ServiceHealth extends GitHubServiceHealth {
     lastCheck: Date;
     failureCount: number;
     rateLimitInfo: RateLimitInfo;
 }
 
-export interface CopyrightMetrics {
+export interface CopyrightMetrics extends GitHubMetrics {
     searchLatency: number;
     cacheHitRate: number;
     errorRate: number;
@@ -23,7 +27,7 @@ export interface CopyrightMetrics {
     activeRequests: number;
 }
 
-// Cache management
+// Cache management.
 export interface CacheEntry<T> {
     data: T;
     timestamp: Date;
@@ -31,7 +35,7 @@ export interface CacheEntry<T> {
     isStale: boolean;
 }
 
-// Base metadata for all responses
+// Base metadata for all responses.
 export interface BaseMetadata {
     timestamp: string;
     requestId: string;
@@ -45,7 +49,7 @@ export interface BaseMetadata {
     source: 'CACHE' | 'GITHUB' | 'FALLBACK';
 }
 
-// Core software copyright type
+// Core software copyright type.
 export interface SoftwareCopyright {
     id: string;
     name: string;
@@ -59,15 +63,15 @@ export interface SoftwareCopyright {
         lastUpdated: Date;
     };
     license: {
-        type: string;  // SPDX identifier
+        type: string;  // SPDX identifier (System Package Data Exchange)
         url?: string;
         permissions?: string[];
         limitations?: string[];
     };
     copyrightStatus: {
-        isProtected: boolean;  // Always true for software
+        isProtected: boolean;
         creationDate: Date;
-        jurisdiction: string;  // Usually 'Worldwide' due to Berne's Convention.
+        jurisdiction: string;
         explanation: string;
     };
     validationStatus: {
@@ -77,25 +81,25 @@ export interface SoftwareCopyright {
     };
 }
 
-// Search parameters with validation
+// Search parameters.
 export interface SoftwareSearchParams {
     query: string;
     page?: number;
     limit?: number;
     type?: 'PROPRIETARY' | 'OPEN_SOURCE' | 'ALL';
-    license?: string[];  // SPDX identifiers
+    license?: string[];
     minStars?: number;
     minConfidence?: number;
     validateLicenses?: boolean;
 }
 
-// API Response metadata
+// API Response metadata.
 export interface ApiResponseMetadata extends BaseMetadata {
     serviceHealth?: ServiceHealth;
     metrics?: Partial<CopyrightMetrics>;
 }
 
-// Search result metadata
+// Search result metadata.
 export interface SearchResultMetadata extends BaseMetadata {
     totalCount: number;
     searchScore: number;
@@ -103,7 +107,7 @@ export interface SearchResultMetadata extends BaseMetadata {
     filters: Partial<SoftwareSearchParams>;
 }
 
-// Software search result with enhanced tracking
+// Software search result.
 export interface SoftwareSearchResult {
     matches: Array<SoftwareCopyright & {
         confidence: number;
@@ -115,7 +119,7 @@ export interface SoftwareSearchResult {
     stats?: CopyrightMetrics;
 }
 
-// API response wrapper with enhanced error handling
+// API response wrapper.
 export interface ApiResponse<T> {
     success: boolean;
     data: T;
@@ -129,46 +133,21 @@ export interface ApiResponse<T> {
     metadata: ApiResponseMetadata;
 }
 
-// GitHub Utility types
-export interface GitHubUtilityConfig {
-    token: string;
-    baseUrl: string;
-    timeout: number;
-    retryAttempts: number;
-    retryDelay: number;
-    maxItemsPerSearch: number;
+// Error handling.
+export enum CopyrightErrorCode {
+    SEARCH_ERROR = 'SEARCH_ERROR',
+    VALIDATION_ERROR = 'VALIDATION_ERROR',
+    RATE_LIMIT_ERROR = 'RATE_LIMIT_ERROR',
+    NOT_FOUND = 'NOT_FOUND',
+    GITHUB_API_ERROR = 'GITHUB_API_ERROR',
+    CACHE_ERROR = 'CACHE_ERROR',
+    CIRCUIT_BREAKER_ERROR = 'CIRCUIT_BREAKER_ERROR',
+    UNKNOWN_ERROR = 'UNKNOWN_ERROR'
 }
 
-export interface GitHubUtility {
-    search(query: string): Promise<GitHubRepository[]>;
-    getRepository(owner: string, repo: string): Promise<GitHubRepository>;
-    getHealth(): Promise<ServiceHealth>;
-    getMetrics(): Partial<CopyrightMetrics>;
-}
-
-// Transformer Utility types
-export interface CopyrightTransformer {
-    transformGithubData(repo: GitHubRepository): SoftwareCopyright;
-    createApiResponse<T>(data: T, requestId: string): ApiResponse<T>;
-}
-
-// Validator Utility types
-export interface CopyrightValidator {
-    validateSearchQuery(
-        query: string, 
-        params?: Partial<SoftwareSearchParams>
-    ): { query: string; params: SoftwareSearchParams };
-    
-    validateRepoParams(
-        owner: string, 
-        repo: string
-    ): { owner: string; repo: string };
-}
-
-// Update the CopyrightService interface to reflect utility usage
+// Service interfaces.
 export interface CopyrightService {
-    // Core operations with utility dependencies
-    readonly github: GitHubUtility;
+    readonly github: GitHubUtilityInterface;
     readonly transformer: CopyrightTransformer;
     readonly validator: CopyrightValidator;
 
@@ -186,46 +165,30 @@ export interface CopyrightService {
     getMetrics(): CopyrightMetrics;
 }
 
-// Operation Context type for better error handling
-export interface OperationContext {
-    operation: string;
-    requestId: string;
-    params?: Record<string, unknown>;
-    startTime?: number;
+// Transformer interface
+export interface CopyrightTransformer {
+    transformGithubData(repo: GitHubRepository): SoftwareCopyright;
+    createApiResponse<T>(data: T, requestId: string): ApiResponse<T>;
 }
 
-// Error handling
-export enum CopyrightErrorCode {
-    SEARCH_ERROR = 'SEARCH_ERROR',
-    VALIDATION_ERROR = 'VALIDATION_ERROR',
-    RATE_LIMIT_ERROR = 'RATE_LIMIT_ERROR',
-    NOT_FOUND = 'NOT_FOUND',
-    GITHUB_API_ERROR = 'GITHUB_API_ERROR',
-    CACHE_ERROR = 'CACHE_ERROR',
-    CIRCUIT_BREAKER_ERROR = 'CIRCUIT_BREAKER_ERROR',
-    UNKNOWN_ERROR = 'UNKNOWN_ERROR'
+// Validator interface
+export interface CopyrightValidator {
+    validateSearchQuery(
+        query: string, 
+        params?: Partial<SoftwareSearchParams>
+    ): { query: string; params: SoftwareSearchParams };
+    
+    validateRepoParams(
+        owner: string, 
+        repo: string
+    ): { owner: string; repo: string };
 }
 
 // Configuration types
 export interface ValidationConfig {
     maxQuerySize: number;
     maxPathSize: number;
-    allowedLicenses: string[];  // SPDX identifiers.
-}
-
-export interface GithubConfig {
-    TOKEN: string;
-    RATE_LIMIT: number;
-    TIMEOUT: number;
-    MAX_ITEMS_PER_SEARCH: number;
-    RETRY_ATTEMPTS: number;
-    RETRY_DELAY: number;
-}
-
-export interface CacheConfig {
-    TTL: number;
-    MAX_SIZE: number;
-    STALE_TTL: number;
+    allowedLicenses: string[];  // SPDX identifiers (System Package Data Exchange).
 }
 
 export interface SearchConfig {
@@ -233,28 +196,4 @@ export interface SearchConfig {
     MAX_CONCURRENT_SEARCHES: number;
     TIMEOUT: number;
     MIN_QUERY_LENGTH: number;
-}
-
-// GitHub API interface with repository pattern.
-export interface GitHubRepository {
-    id: number;
-    name: string;
-    full_name: string;
-    private: boolean;
-    html_url: string;
-    description: string | null;
-    owner: {
-        login: string;
-        id: number;
-        html_url: string;
-    };
-    created_at: string;
-    updated_at: string;
-    stargazers_count: number;
-    license: {
-        key: string;
-        name: string;
-        spdx_id: string;
-        url: string;
-    } | null;
 }
