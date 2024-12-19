@@ -93,8 +93,8 @@ export class GitHubUtility implements GitHubUtilityInterface {
         logger.info('GitHubUtility disposed successfully');
     }
 
-    search(_query: string, _options?: GitHubSearchOptions): Promise<GitHubRepository[]> {
-        throw new Error("Method not implemented.");
+     async search(_query: string, _options?: GitHubSearchOptions): Promise<GitHubRepository[]> {
+        throw new Error("Search method not implemented");
     }
 
     async getHealth(): Promise<GitHubServiceHealth> {
