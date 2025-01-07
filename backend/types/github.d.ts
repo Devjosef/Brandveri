@@ -1,49 +1,55 @@
 import { AxiosResponse } from 'axios';
 
-// Core GitHub types
+/**
+ * Core GitHub types with better type safety
+ */
 export interface GitHubRepository {
-    id: number;
-    node_id: string;
-    name: string;
-    full_name: string;
-    private: boolean;
-    owner: {
-        login: string;
-        id: number;
-        type: string;
-        site_admin: boolean;
-    };
-    html_url: string;
-    description: string | null;
-    fork: boolean;
-    url: string;
-    created_at: string;
-    updated_at: string;
-    pushed_at: string;
-    git_url: string;
-    ssh_url: string;
-    clone_url: string;
-    homepage: string | null;
-    size: number;
-    stargazers_count: number;
-    watchers_count: number;
-    language: string | null;
-    forks_count: number;
-    archived: boolean;
-    disabled: boolean;
-    open_issues_count: number;
-    license: GitHubLicense | null;
-    topics: string[];
-    visibility: 'public' | 'private';
-    default_branch: string;
-    permissions?: GitHubPermissions;
+    readonly id: number;
+    readonly node_id: string;
+    readonly name: string;
+    readonly full_name: string;
+    readonly private: boolean;
+    readonly owner: GitHubOwner;
+    readonly html_url: string;
+    readonly description: string | null;
+    readonly fork: boolean;
+    readonly url: string;
+    readonly created_at: string;
+    readonly updated_at: string;
+    readonly pushed_at: string;
+    readonly git_url: string;
+    readonly ssh_url: string;
+    readonly clone_url: string;
+    readonly homepage: string | null;
+    readonly size: number;
+    readonly stargazers_count: number;
+    readonly watchers_count: number;
+    readonly language: string | null;
+    readonly forks_count: number;
+    readonly archived: boolean;
+    readonly disabled: boolean;
+    readonly open_issues_count: number;
+    readonly license: GitHubLicense | null;
+    readonly topics: ReadonlyArray<string>;
+    readonly visibility: GitHubVisibility;
+    readonly default_branch: string;
+    readonly permissions?: GitHubPermissions;
 }
 
+export interface GitHubOwner {
+    readonly login: string;
+    readonly id: number;
+    readonly type: string;
+    readonly site_admin: boolean;
+}
+
+export type GitHubVisibility = 'public' | 'private';
+
 export interface GitHubLicense {
-    key: string;
-    name: string;
-    spdx_id: string;
-    url: string;
+    readonly key: string;
+    readonly name: string;
+    readonly spdx_id: string;
+    readonly url: string;
 }
 
 export interface GitHubPermissions {

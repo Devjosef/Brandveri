@@ -109,7 +109,7 @@ export class GitHubUtility implements GitHubUtilityInterface {
 
             const searchInput: SearchInput = {
                 query: sanitizedData.query as string,
-                ...(sanitizedData.options && { options: sanitizedData.options as GitHubSearchOptions })
+                options: sanitizedData.options || undefined
             };
 
             const cacheKey = this.buildCacheKey('search', { 

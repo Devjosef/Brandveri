@@ -1,15 +1,28 @@
-import { 
+import type { 
     GitHubRepository, 
     SoftwareCopyright, 
-    ApiResponse 
+    ApiResponse,
+    License 
 } from "../../../types/copyright";
 import { CopyrightError, CopyrightErrorCode } from './copyrightError';
 import { loggers } from '../../../observability/contextLoggers';
 import { Counter } from 'prom-client';
 
+// Domain-specific validators
+import { GitHubValidator } from './validators/githubValidator';
+import { CopyrightValidator } from './validators/copyrightValidator';
+
+// Pure transformation functions
+import { 
+    transformRepository,
+    transformLicense,
+    transformCopyrightStatus 
+} from './transformers';
+
 const logger = loggers.copyright;
 
-const transformMetrics = {
+// Immutable metrics
+const transformMetrics = Object.freeze({
     malformedData: new Counter({
         name: 'copyright_malformed_data_total',
         help: 'Total number of malformed data encounters',
@@ -20,170 +33,152 @@ const transformMetrics = {
         help: 'Total number of transformation errors',
         labelNames: ['type', 'operation']
     })
-};
+});
 
+/**
+ * Transforms GitHub repository data into copyright information.
+ * Follows functional programming principles and maintains immutability.
+ */
 export class CopyrightTransformer {
-    transformGithubData(repo: GitHubRepository): SoftwareCopyright {
+    private readonly githubValidator: GitHubValidator;
+    private readonly copyrightValidator: CopyrightValidator;
+
+    constructor() {
+        this.githubValidator = new GitHubValidator();
+        this.copyrightValidator = new CopyrightValidator();
+    }
+
+    /**
+     * Pure transformation function that converts GitHub data to copyright data
+     */
+    public transform(repo: GitHubRepository): SoftwareCopyright {
         try {
-            // Handle completely malformed input
-            if (!repo || typeof repo !== 'object') {
-                transformMetrics.malformedData.inc({ field: 'repo', operation: 'transformGithubData' });
-                throw new CopyrightError(
-                    CopyrightErrorCode.VALIDATION_ERROR,
-                    'Repository data is malformed or missing',
-                    { received: typeof repo }
-                );
-            }
+            // Validate input
+            this.validateInput(repo);
 
-            // Handle missing or malformed essential fields
-            const essentialFields = ['id', 'name', 'owner', 'html_url'] as const;
-            for (const field of essentialFields) {
-                if (!repo[field]) {
-                    transformMetrics.malformedData.inc({ field, operation: 'transformGithubData' });
-                    throw new CopyrightError(
-                        CopyrightErrorCode.VALIDATION_ERROR,
-                        `Missing essential field: ${field}`,
-                        { repo }
-                    );
-                }
-            }
+            // Transform data using pure functions
+            const copyright = this.createCopyright(repo);
 
-            // Sanitize and transform data with fallbacks
-            return {
-                id: String(repo.id), // Handle non-string IDs
-                name: this.sanitizeString(repo.name, 'repository name'),
-                type: this.determineType(repo),
-                repository: this.transformRepoDetails(repo),
-                license: this.transformLicense(repo.license),
-                copyrightStatus: this.determineCopyrightStatus(repo),
-                validationStatus: {
-                    isValid: true,
-                    lastValidated: new Date()
-                }
-            };
+            // Validate output
+            this.validateOutput(copyright);
+
+            return copyright;
 
         } catch (error) {
-            transformMetrics.errors.inc({ 
-                type: error instanceof CopyrightError ? error.code : 'UNKNOWN_ERROR',
-                operation: 'transformGithubData'
-            });
-            logger.error({ error, repoData: repo }, 'Failed to transform malformed GitHub data');
+            this.handleTransformError(error, repo);
             throw error;
         }
     }
 
-    private sanitizeString(value: unknown, fieldName: string): string {
-        if (typeof value !== 'string') {
-            transformMetrics.malformedData.inc({ field: fieldName, operation: 'sanitizeString' });
-            throw new CopyrightError(
-                CopyrightErrorCode.VALIDATION_ERROR,
-                `Invalid ${fieldName}: expected string, got ${typeof value}`,
-                { value }
-            );
-        }
-        return value.trim();
-    }
-
-    private transformRepoDetails(repo: GitHubRepository): SoftwareCopyright['repository'] {
+    /**
+     * Input validation using composition
+     */
+    private validateInput(repo: GitHubRepository): void {
         try {
-            // Handle malformed dates
-            const createdAt = this.parseDate(repo.created_at, 'created_at');
-            const lastUpdated = this.parseDate(repo.updated_at, 'updated_at');
-
-            // Handle malformed numbers
-            const stars = this.parseNumber(repo.stargazers_count, 'stars');
-
-            // Handle malformed owner object
-            if (!repo.owner || typeof repo.owner !== 'object' || !repo.owner.login) {
-                transformMetrics.malformedData.inc({ field: 'owner', operation: 'transformRepoDetails' });
-                throw new CopyrightError(
-                    CopyrightErrorCode.VALIDATION_ERROR,
-                    'Malformed owner data',
-                    { owner: repo.owner }
-                );
-            }
-
-            return {
-                url: this.sanitizeString(repo.html_url, 'repository URL'),
-                owner: this.sanitizeString(repo.owner.login, 'owner login'),
-                name: this.sanitizeString(repo.name, 'repository name'),
-                stars,
-                createdAt,
-                lastUpdated
-            };
+            this.githubValidator.validate(repo);
         } catch (error) {
-            transformMetrics.malformedData.inc({ field: 'repoDetails', operation: 'transformRepoDetails' });
-            throw error;
-        }
-    }
-
-    private parseDate(value: unknown, fieldName: string): Date {
-        try {
-            if (typeof value !== 'string' || !value) {
-                throw new Error('Invalid date format');
-            }
-            const date = new Date(value);
-            if (isNaN(date.getTime())) {
-                throw new Error('Invalid date value');
-            }
-            return date;
-        } catch (error) {
-            transformMetrics.malformedData.inc({ field: fieldName, operation: 'parseDate' });
             throw new CopyrightError(
                 CopyrightErrorCode.VALIDATION_ERROR,
-                `Invalid date format for ${fieldName}`,
-                { value, error }
+                'Invalid GitHub repository data',
+                { error }
             );
         }
     }
 
-    private parseNumber(value: unknown, fieldName: string): number {
-        const num = Number(value);
-        if (isNaN(num)) {
-            transformMetrics.malformedData.inc({ field: fieldName, operation: 'parseNumber' });
-            throw new CopyrightError(
-                CopyrightErrorCode.VALIDATION_ERROR,
-                `Invalid number format for ${fieldName}`,
-                { value }
-            );
-        }
-        return num;
+    /**
+     * Pure function to create copyright data
+     */
+    private createCopyright(repo: GitHubRepository): SoftwareCopyright {
+        return Object.freeze({
+            id: String(repo.id),
+            name: repo.name,
+            type: this.determineType(repo),
+            repository: transformRepository(repo),
+            license: this.transformLicenseWithValidation(repo.license),
+            copyrightStatus: transformCopyrightStatus(repo),
+            validationStatus: {
+                isValid: true,
+                lastValidated: new Date()
+            }
+        });
     }
 
+    /**
+     * Pure function to determine repository type
+     */
     private determineType(repo: GitHubRepository): SoftwareCopyright['type'] {
         if (repo.private) return 'PROPRIETARY';
         if (repo.license) return 'OPEN_SOURCE';
         return 'UNKNOWN';
     }
 
-    private transformLicense(license: GitHubRepository['license']): SoftwareCopyright['license'] {
-        if (!license) {
-            return {
-                type: 'UNKNOWN',
-                permissions: [],
-                limitations: []
-            };
-        }
-
-        return {
+    /**
+     * Transform license with validation
+     */
+    private transformLicenseWithValidation(
+        license: GitHubRepository['license']
+    ): License | null {
+        if (!license) return null;
+        
+        const transformedLicense: License = {
             type: license.spdx_id || 'UNKNOWN',
-            url: license.url || undefined,
-            permissions: [], // Can be enhanced with SPDX license data.
-            limitations: []  // Can be enhanced with SPDX license data.
+            url: license.url,
+            permissions: [],
+            limitations: []
         };
+
+        this.validateLicense(transformedLicense);
+        return transformedLicense;
     }
 
-    private determineCopyrightStatus(repo: GitHubRepository): SoftwareCopyright['copyrightStatus'] {
-        return {
-            isProtected: true, // Software is always protected by copyright. 
-            creationDate: new Date(repo.created_at),
-            jurisdiction: 'Worldwide', // Berne Convention
-            explanation: 'Software is automatically protected by copyright upon creation'
-        };
+    /**
+     * Validate license data
+     */
+    private validateLicense(license: License): void {
+        if (!license.type) {
+            throw new CopyrightError(
+                CopyrightErrorCode.VALIDATION_ERROR,
+                'License must have a type'
+            );
+        }
     }
 
-    createApiResponse<T>(data: T, requestId: string): ApiResponse<T> {
-        return {
+    /**
+     * Output validation
+     */
+    private validateOutput(copyright: SoftwareCopyright): void {
+        try {
+            this.copyrightValidator.validate(copyright);
+        } catch (error) {
+            throw new CopyrightError(
+                CopyrightErrorCode.VALIDATION_ERROR,
+                'Invalid copyright data structure',
+                { error }
+            );
+        }
+    }
+
+    /**
+     * Error handling with proper metrics
+     */
+    private handleTransformError(error: unknown, context: unknown): void {
+        transformMetrics.errors.inc({ 
+            type: error instanceof CopyrightError ? error.code : 'UNKNOWN_ERROR',
+            operation: 'transform'
+        });
+        
+        logger.error({ 
+            error, 
+            context,
+            stack: error instanceof Error ? error.stack : undefined
+        }, 'Transform operation failed');
+    }
+
+    /**
+     * Create API response with proper typing
+     */
+    public createApiResponse<T>(data: T, requestId: string): ApiResponse<T> {
+        return Object.freeze({
             success: true,
             data,
             metadata: {
@@ -192,6 +187,6 @@ export class CopyrightTransformer {
                 source: 'GITHUB',
                 disclaimer: 'Software is automatically protected by copyright upon creation'
             }
-        };
+        });
     }
 }

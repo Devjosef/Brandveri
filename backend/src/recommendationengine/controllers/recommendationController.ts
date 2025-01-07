@@ -6,9 +6,11 @@ import { RecommendationError, CacheError } from '../data/recommendationDAL';
 import { Counter, Histogram } from 'prom-client';
 import crypto from 'crypto';
 import { validatePayloadSize, sanitizeRequest } from '../../utils/requestValidators';
-import { CircuitBreaker } from '../../utils/CircuitBreaker';
+import { CircuitBreaker } from '../../utils/circuitBreaker';
 import { RequestContext } from '../../utils/requestContext';
 import { RecommendationRequest } from '../../../types/recommendationEngine';
+
+
 
 const MAX_PAYLOAD_SIZE = 1024 * 100; // 100KB
 const REQUEST_TIMEOUT = 30000; // 30 seconds

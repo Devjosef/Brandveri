@@ -1,40 +1,67 @@
 import { 
     GitHubRepository, 
     GitHubServiceHealth, 
-    GitHubMetrics
+    GitHubMetrics,
+    GitHubLicense
 } from './github';
+
+/**
+ * License Types
+ */
+export interface License {
+    readonly type: string;  // SPDX identifier from GitHubLicense
+    readonly url?: string;
+    readonly permissions?: ReadonlyArray<string>;
+    readonly limitations?: ReadonlyArray<string>;
+}
 
 /**
  * Core Copyright Types
  */
 export interface SoftwareCopyright {
-    id: string;
-    name: string;
-    type: 'PROPRIETARY' | 'OPEN_SOURCE' | 'UNKNOWN';
-    repository: {
-        url: string;
-        owner: string;
-        name: string;
-        stars: number;
-        createdAt: Date;
-        lastUpdated: Date;
+    readonly id: string;
+    readonly name: string;
+    readonly type: 'PROPRIETARY' | 'OPEN_SOURCE' | 'UNKNOWN';
+    readonly repository: {
+        readonly url: string;
+        readonly owner: string;
+        readonly name: string;
+        readonly stars: number;
+        readonly createdAt: Date;
+        readonly lastUpdated: Date;
     };
-    license: {
-        type: string;  // SPDX identifier
-        url?: string;
-        permissions?: string[];
-        limitations?: string[];
+    readonly license: License | null; // Now using the License interface
+    readonly copyrightStatus: {
+        readonly isProtected: boolean;
+        readonly creationDate: Date;
+        readonly jurisdiction: string;
+        readonly explanation: string;
     };
-    copyrightStatus: {
-        isProtected: boolean;
-        creationDate: Date;
-        jurisdiction: string;
-        explanation: string;
+    readonly validationStatus: {
+        readonly isValid: boolean;
+        readonly errors?: ReadonlyArray<string>;
+        readonly lastValidated: Date;
     };
-    validationStatus: {
-        isValid: boolean;
-        errors?: string[];
-        lastValidated: Date;
+}
+
+/**
+ * API Types
+ */
+export interface ApiResponse<T> {
+    readonly success: boolean;
+    readonly data: T;
+    readonly metadata: ResponseMetadata;
+}
+
+export interface ResponseMetadata {
+    readonly timestamp: string;
+    readonly requestId: string;
+    readonly source: 'CACHE' | 'GITHUB' | 'FALLBACK';
+    readonly disclaimer?: string;
+    readonly performance?: {
+        readonly duration: number;
+        readonly cacheHit: boolean;
+        readonly rateLimitRemaining: number;
     };
 }
 
@@ -42,102 +69,49 @@ export interface SoftwareCopyright {
  * Service Health & Monitoring
  */
 export interface ServiceHealth {
-    status: 'healthy' | 'degraded' | 'unhealthy';
-    timestamp: string;
-    components: {
-        github: GitHubServiceHealth;
-        cache: CacheHealth;
-        circuitBreaker: CircuitBreakerHealth;
-        rateLimiter: RateLimiterHealth;
+    readonly status: 'healthy' | 'degraded' | 'unhealthy';
+    readonly timestamp: string;
+    readonly components: {
+        readonly github: GitHubServiceHealth;
+        readonly cache: CacheHealth;
+        readonly circuitBreaker: CircuitBreakerHealth;
+        readonly rateLimiter: RateLimiterHealth;
     };
-    metrics: CopyrightMetrics;
+    readonly metrics: CopyrightMetrics;
 }
 
 export interface CacheHealth {
-    status: string;
-    details?: string;
+    readonly status: string;
+    readonly details?: string;
 }
 
 export interface CircuitBreakerHealth {
-    status: 'open' | 'closed';
-    failures: number;
+    readonly status: 'open' | 'closed';
+    readonly failures: number;
 }
 
 export interface RateLimiterHealth {
-    status: string;
-    currentLoad: number;
+    readonly status: string;
+    readonly currentLoad: number;
 }
 
 export interface CopyrightMetrics {
-    requests: {
-        total: number;
-        errors: number;
-        concurrent: number;
+    readonly requests: {
+        readonly total: number;
+        readonly errors: number;
+        readonly concurrent: number;
     };
-    performance: {
-        averageResponseTime: number;
-        p95ResponseTime: number;
-        p99ResponseTime: number;
+    readonly performance: {
+        readonly averageResponseTime: number;
+        readonly p95ResponseTime: number;
+        readonly p99ResponseTime: number;
     };
-    cache: {
-        hitRate: number;
-        size: number;
-        capacity: number;
+    readonly cache: {
+        readonly hitRate: number;
+        readonly size: number;
+        readonly capacity: number;
     };
-    github: GitHubMetrics;
-}
-
-/**
- * API Types
- */
-export interface ApiResponse<T> {
-    success: boolean;
-    data: T;
-    metadata: ResponseMetadata;
-}
-
-export interface ResponseMetadata {
-    timestamp: string;
-    requestId: string;
-    source: 'CACHE' | 'GITHUB' | 'FALLBACK';
-    disclaimer?: string;
-    performance?: {
-        duration: number;
-        cacheHit: boolean;
-        rateLimitRemaining: number;
-    };
-}
-
-/**
- * Search Types
- */
-export interface SoftwareSearchParams {
-    query: string;
-    page?: number;
-    limit?: number;
-    type?: 'PROPRIETARY' | 'OPEN_SOURCE' | 'ALL';
-    license?: string[];
-    minStars?: number;
-    minConfidence?: number;
-    validateLicenses?: boolean;
-}
-
-export interface SoftwareSearchResult {
-    matches: Array<SoftwareCopyright & {
-        confidence: number;
-        source: 'GITHUB';
-        details: string;
-        lastChecked: Date;
-    }>;
-    metadata: SearchResultMetadata;
-    stats?: CopyrightMetrics;
-}
-
-export interface SearchResultMetadata extends ResponseMetadata {
-    totalCount: number;
-    searchScore: number;
-    query: string;
-    filters: Partial<SoftwareSearchParams>;
+    readonly github: GitHubMetrics;
 }
 
 /**
@@ -175,3 +149,19 @@ export interface ICopyrightService {
     getMetrics(): CopyrightMetrics;
     dispose(): Promise<void>;
 }
+
+export { GitHubRepository };
+
+/**
+ * Search Parameters
+ */
+export interface SoftwareSearchParams {
+    readonly query: string;
+    readonly type?: 'PROPRIETARY' | 'OPEN_SOURCE' | 'ALL';
+    readonly license?: ReadonlyArray<string>;
+    readonly minStars?: number;
+    readonly minConfidence?: number;
+    readonly page: number;
+    readonly limit: number;
+}
+
