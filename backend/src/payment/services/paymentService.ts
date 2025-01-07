@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { cacheService } from '../../utils/cache'
+import { paymentCache } from '../../utils/cache';
 import { loggers } from '../../../observability/contextLoggers'
 import { Redis } from 'ioredis';
 import { paymentMetrics } from '../utils/paymentMetrics';
@@ -24,14 +24,11 @@ class PaymentService {
     const cacheKey = `idempotency:${idempotencyKey}`;
     
     try {
-      const cached = await cacheService.get(cacheKey, { service: 'payment' });
-      if (cached) return cached as T;
+      const cached = await paymentCache.get<T>(cacheKey);
+      if (cached) return cached;
 
       const result = await operation();
-      await cacheService.set(cacheKey, result, {
-        ttl: 86400, // 24 hours
-        service: 'payment'
-      });
+      await paymentCache.set(cacheKey, result, 86400); // 24 hours
 
       return result;
     } catch (error) {
@@ -117,7 +114,7 @@ class PaymentService {
   public async createSubscription(customerId: string, priceId: string) {
     const cacheKey = `subscription:${customerId}:${priceId}`;
     try {
-      const cachedSubscription = await cacheService.get(cacheKey, { service: 'payment' });
+      const cachedSubscription = await paymentCache.get(cacheKey);
       if (cachedSubscription) {
         return cachedSubscription;
       }
@@ -127,10 +124,7 @@ class PaymentService {
         items: [{ price: priceId }],
       });
 
-      await cacheService.set(cacheKey, subscription, {
-        ttl: 3600,
-        service: 'payment'
-      });
+      await paymentCache.set(cacheKey, subscription, 3600);
 
       return subscription;
     } catch (error) {

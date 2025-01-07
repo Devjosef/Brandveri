@@ -8,7 +8,7 @@ import {
   TrademarkErrorCode
 } from '../../../types/trademark';
 import { Counter, Histogram } from 'prom-client';
-import { Cache } from '../../utils/cache';
+import { trademarkCache } from '../../utils/cache';
 import { generateSearchCacheKey, normalizeTrademarkQuery } from '../utils/trademarkUtils';
 import { formatTrademarkResponse } from '../utils/responseFormatter';
 import { TrademarkError } from '../utils/trademarkError';
@@ -42,14 +42,11 @@ const trademarkMetrics = {
 };
 
 class TrademarkService {
-  private readonly cache: Cache;
   private readonly usptoClient: AxiosInstance;
   private readonly euipoClient: AxiosInstance;
   private readonly asyncLock: AsyncLock;
 
   constructor() {
-    this.cache = new Cache();
-    
     const trademarkConfig = config.TRADEMARK;
     
     this.usptoClient = axios.create({
@@ -126,7 +123,7 @@ class TrademarkService {
         };
 
         const cacheKey = generateSearchCacheKey(normalizedParams);
-        const cachedResult = await this.cache.get<TrademarkResponse>(cacheKey);
+        const cachedResult = await trademarkCache.get<TrademarkResponse>(cacheKey);
         
         if (cachedResult) {
           trademarkMetrics.operations.inc({ 
@@ -175,9 +172,7 @@ class TrademarkService {
 
         const response = formatTrademarkResponse(formattedResults);
         
-        await this.cache.set(cacheKey, response, { 
-          ttl: config.TRADEMARK.CACHE_TTL
-        });
+        await trademarkCache.set(cacheKey, response, config.TRADEMARK.CACHE_TTL);
         
         trademarkMetrics.operations.inc({ 
           operation: 'search', 
