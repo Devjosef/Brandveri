@@ -1,3 +1,4 @@
+import { inject, injectable } from 'inversify';
 import axios, { AxiosInstance, AxiosError, AxiosResponseHeaders } from "axios";
 import { CircuitBreaker } from '../../utils/circuitBreaker';
 import { Counter, Histogram, Gauge } from 'prom-client';
@@ -11,99 +12,234 @@ import {
     GitHubRateLimit,
     GitHubServiceHealth,
     GitHubMetrics,
-    GitHubSearchOptions
+    GitHubSearchOptions,
+    GitHubErrorType,
+    GitHubError
 } from '../../../types/github';
+import { CopyrightError, CopyrightErrorCode } from '../utils/copyrightError';
 import { sanitizeRequest } from '../../utils/requestValidators';
 
 const logger = loggers.copyright;
 
-enum GitHubErrorType {
-    RATE_LIMIT = 'RATE_LIMIT',
-    NOT_FOUND = 'NOT_FOUND',
-    UNAUTHORIZED = 'UNAUTHORIZED',
-    UNKNOWN = 'UNKNOWN'
-}
-
 interface CacheEntry<T> {
     data: T;
     timestamp: number;
+    expiresAt: number;
 }
 
-type GitHubCacheData = GitHubRepository | GitHubContent | GitHubRateLimit;
-type GitHubApiResponse<T> = T extends GitHubRateLimit 
-    ? { resources: { core: T } }
-    : T;
+// interface for search input with proper type safety
+interface SearchInput {
+    query: string;
+    options?: GitHubSearchOptions;
+}
 
+@injectable()
 export class GitHubUtility implements GitHubUtilityInterface {
-    [x: string]: any;
-    private client!: AxiosInstance;
-    private circuitBreaker!: CircuitBreaker;
-    private cache!: LRUCache<string, CacheEntry<GitHubCacheData>>;
-    private cacheMonitorInterval?: NodeJS.Timeout;
-    private requestCount = 0;
-    private successCount = 0;
-    private failureCount = 0;
-    private cacheHits = 0;
-    private cacheMisses = 0;
+    private readonly client: AxiosInstance;
+    private readonly circuitBreaker: CircuitBreaker;
+    private readonly cache: LRUCache<string, CacheEntry<GitHubRepository[] | GitHubRepository | GitHubContent>>;
+    private readonly cacheMonitorInterval: NodeJS.Timeout;
+
     private readonly metrics = {
-        requests: new Counter({
-            name: 'github_requests_total',
-            help: 'Total GitHub API requests',
-            labelNames: ['method', 'status']
+        operations: new Counter({
+            name: 'github_operations_total',
+            help: 'Total GitHub API operations',
+            labelNames: ['operation', 'status', 'cache']
         }),
         errors: new Counter({
             name: 'github_errors_total',
             help: 'Total GitHub API errors',
-            labelNames: ['type']
+            labelNames: ['operation', 'type']
         }),
         duration: new Histogram({
-            name: 'github_request_duration_seconds',
-            help: 'GitHub API request duration',
-            labelNames: ['method']
+            name: 'github_operation_duration_seconds',
+            help: 'GitHub API operation duration',
+            labelNames: ['operation', 'cache']
         }),
         rateLimit: new Gauge({
             name: 'github_rate_limit_remaining',
             help: 'GitHub API rate limit remaining'
-        }),
-        cacheSize: new Gauge({
-            name: 'github_cache_size_bytes',
-            help: 'GitHub cache size in bytes'
         })
     };
-    private latencyValues: { avg: number; p95: number; p99: number } = {
-        avg: 0,
-        p95: 0,
-        p99: 0
+
+    private readonly performanceMetrics = {
+        requestCount: 0,
+        successCount: 0,
+        failureCount: 0,
+        cacheHits: 0,
+        cacheMisses: 0,
+        latency: {
+            avg: 0,
+            p95: 0,
+            p99: 0
+        }
     };
 
-    constructor(config: GitHubConfig) {
+    constructor(
+        @inject('GitHubConfig') private readonly config: GitHubConfig
+    ) {
         this.validateConfig(config);
-        this.initializeClient(config);
-        this.initializeCircuitBreaker(config);
-        this.initializeCache();
-        this.initializeCacheMonitoring();
+        this.client = this.initializeClient();
+        this.circuitBreaker = this.initializeCircuitBreaker();
+        this.cache = this.initializeCache();
+        this.cacheMonitorInterval = this.initializeCacheMonitoring();
         logger.info('GitHubUtility initialized successfully');
     }
 
-    public dispose(): void {
-        if (this.cacheMonitorInterval) {
-            clearInterval(this.cacheMonitorInterval);
-            this.cacheMonitorInterval = undefined;
+    async search(
+        query: string, 
+        options?: GitHubSearchOptions
+    ): Promise<GitHubRepository[]> {
+        const timer = this.metrics.duration.startTimer({ operation: 'search' });
+        
+        try {
+            // First sanitize the input
+            const sanitizedData = sanitizeRequest({
+                query,
+                options
+            });
+
+            // Validate the sanitized data
+            if (!this.isValidSearchInput(sanitizedData)) {
+                throw new CopyrightError(
+                    CopyrightErrorCode.VALIDATION_ERROR,
+                    'Invalid search parameters'
+                );
+            }
+
+            const searchInput: SearchInput = {
+                query: sanitizedData.query as string,
+                ...(sanitizedData.options && { options: sanitizedData.options as GitHubSearchOptions })
+            };
+
+            const cacheKey = this.buildCacheKey('search', { 
+                query: searchInput.query,
+                ...searchInput.options 
+            });
+            
+            const cached = this.getFromCache<GitHubRepository[]>(cacheKey);
+            if (cached) {
+                this.metrics.operations.inc({ operation: 'search', status: 'success', cache: 'hit' });
+                return cached;
+            }
+
+            const result = await this.circuitBreaker.execute(() =>
+                this.makeApiCall<GitHubRepository[]>(
+                    `search/repositories?q=${encodeURIComponent(searchInput.query)}`
+                )
+            );
+
+            this.setCache(cacheKey, result);
+            this.metrics.operations.inc({ operation: 'search', status: 'success', cache: 'miss' });
+            
+            return result;
+        } catch (error) {
+            this.handleError('search', error);
+            throw error;
+        } finally {
+            timer();
         }
-        logger.info('GitHubUtility disposed successfully');
     }
 
-     async search(_query: string, _options?: GitHubSearchOptions): Promise<GitHubRepository[]> {
-        throw new Error("Search method not implemented");
+    // Type guard for validating the input data
+    private isValidSearchInput(data: unknown): boolean {
+        if (!data || typeof data !== 'object') {
+            return false;
+        }
+
+        const input = data as Record<string, unknown>;
+        
+        if (typeof input.query !== 'string' || !input.query) {
+            return false;
+        }
+
+        if (input.options !== undefined && 
+            (typeof input.options !== 'object' || input.options === null)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    async getRepository(owner: string, repo: string): Promise<GitHubRepository> {
+        const timer = this.metrics.duration.startTimer({ operation: 'getRepository' });
+
+        try {
+            const sanitizedInput = sanitizeRequest({ owner, repo });
+            const cacheKey = this.buildCacheKey('repository', sanitizedInput);
+
+            const cached = this.getFromCache<GitHubRepository>(cacheKey);
+            if (cached) {
+                this.metrics.operations.inc({ operation: 'getRepository', status: 'success', cache: 'hit' });
+                return cached;
+            }
+
+            const result = await this.circuitBreaker.execute(() =>
+                this.makeApiCall<GitHubRepository>(`repos/${sanitizedInput.owner}/${sanitizedInput.repo}`)
+            );
+
+            this.setCache(cacheKey, result);
+            this.metrics.operations.inc({ operation: 'getRepository', status: 'success', cache: 'miss' });
+
+            return result;
+        } catch (error) {
+            this.handleError('getRepository', error);
+            throw error;
+        } finally {
+            timer();
+        }
+    }
+
+    async getContent(owner: string, repo: string, path: string): Promise<GitHubContent> {
+        const timer = this.metrics.duration.startTimer({ operation: 'getContent' });
+
+        try {
+            const sanitizedInput = sanitizeRequest({ owner, repo, path });
+            const cacheKey = this.buildCacheKey('content', sanitizedInput);
+
+            const cached = this.getFromCache<GitHubContent>(cacheKey);
+            if (cached) {
+                this.metrics.operations.inc({ operation: 'getContent', status: 'success', cache: 'hit' });
+                return cached;
+            }
+
+            const result = await this.circuitBreaker.execute(() =>
+                this.makeApiCall<GitHubContent>(
+                    `repos/${sanitizedInput.owner}/${sanitizedInput.repo}/contents/${sanitizedInput.path}`
+                )
+            );
+
+            this.setCache(cacheKey, result);
+            this.metrics.operations.inc({ operation: 'getContent', status: 'success', cache: 'miss' });
+
+            return result;
+        } catch (error) {
+            this.handleError('getContent', error);
+            throw error;
+        } finally {
+            timer();
+        }
+    }
+
+    async getRateLimit(): Promise<GitHubRateLimit> {
+        try {
+            const result = await this.makeApiCall<{ resources: { core: GitHubRateLimit } }>('rate_limit');
+            return result.resources.core;
+        } catch (error) {
+            this.handleError('getRateLimit', error);
+            throw error;
+        }
     }
 
     async getHealth(): Promise<GitHubServiceHealth> {
         try {
             const rateLimit = await this.getRateLimit();
+            const isHealthy = this.circuitBreaker.isClosed() && rateLimit.remaining > 0;
+
             return {
-                isHealthy: true,
+                isHealthy,
                 lastCheck: new Date(),
-                failureCount: 0,
+                failureCount: this.circuitBreaker.getFailureCount(),
                 rateLimitInfo: rateLimit
             };
         } catch (error) {
@@ -111,7 +247,7 @@ export class GitHubUtility implements GitHubUtilityInterface {
             return {
                 isHealthy: false,
                 lastCheck: new Date(),
-                failureCount: 1,
+                failureCount: this.circuitBreaker.getFailureCount(),
                 rateLimitInfo: {
                     limit: 0,
                     remaining: 0,
@@ -125,246 +261,224 @@ export class GitHubUtility implements GitHubUtilityInterface {
     getMetrics(): GitHubMetrics {
         return {
             requests: {
-                total: this.requestCount,
-                successful: this.successCount,
-                failed: this.failureCount
+                total: this.performanceMetrics.requestCount,
+                successful: this.performanceMetrics.successCount,
+                failed: this.performanceMetrics.failureCount
             },
             rateLimit: {
-                limit: 5000,
+                limit: Number(this.metrics.rateLimit.get()),
                 remaining: Number(this.metrics.rateLimit.get()),
                 reset: Math.floor(Date.now() / 1000) + 3600,
-                used: 5000 - Number(this.metrics.rateLimit.get())
+                used: this.performanceMetrics.requestCount
             },
-            latency: this.latencyValues,
+            latency: this.performanceMetrics.latency,
             cache: {
-                hits: this.cacheHits,
-                misses: this.cacheMisses,
-                size: this.calculateCacheSize()
+                hits: this.performanceMetrics.cacheHits,
+                misses: this.performanceMetrics.cacheMisses,
+                size: this.cache.size
             }
         };
     }
 
-    private updateLatencyMetrics(): void {
-        this.metrics.duration.get().then((histogram: any) => {
-            this.latencyValues = {
-                avg: histogram.values['avg'] || 0,
-                p95: histogram.values['0.95'] ? Number(histogram.values['0.95']) : 0,
-                p99: histogram.values['0.99'] ? Number(histogram.values['0.99']) : 0
-            };
-        }).catch((error: any) => {
-            logger.error({ error }, 'Failed to update latency metrics');
-        });
-    }
-
-    private updateMetricCounters(success: boolean): void {
-        this.requestCount++;
-        if (success) {
-            this.successCount++;
-        } else {
-            this.failureCount++;
-        }
-    }
-
-    async getRepository(owner: string, repo: string): Promise<GitHubRepository> {
-        return this.fetchFromApi<GitHubRepository>(
-            `repos/${owner}/${repo}`,
-            'getRepository',
-            { owner, repo }
-        );
-    }
-
-    async getContent(owner: string, repo: string, path: string): Promise<GitHubContent> {
-        return this.fetchRepoContent(owner, repo, path);
-    }
-
-    async getRateLimit(): Promise<GitHubRateLimit> {
+    private async makeApiCall<T>(path: string): Promise<T> {
         try {
-            const result = await this.makeApiCall<GitHubRateLimit>(
-                'rate_limit',
-                'getRateLimit'
-            );
-            return result.resources.core;
+            const response = await this.client.get<T>(path);
+            this.updateRateLimitMetrics(response.headers as AxiosResponseHeaders);
+            return response.data;
         } catch (error) {
-            logger.error({ error }, 'Failed to get rate limit');
-            return {
-                limit: 5000,
-                remaining: 0,
-                reset: Math.floor(Date.now() / 1000) + 3600,
-                used: 5000
-            };
+            throw this.transformError(error as AxiosError);
         }
     }
 
-    private async fetchRepoContent(owner: string, repo: string, path: string): Promise<GitHubContent> {
-        const sanitizedInput = sanitizeRequest({ owner, repo, path });
-        return this.fetchFromApi<GitHubContent>(
-            `repos/${sanitizedInput.owner}/${sanitizedInput.repo}/contents/${sanitizedInput.path}`,
-            'fetchRepoContent',
-            sanitizedInput as Record<string, string>
-        );
-    }
-
-    private async fetchFromApi<T extends GitHubCacheData>(
-        path: string, 
-        method: string, 
-        params?: Record<string, string>
-    ): Promise<T> {
-        const result = await this.makeApiCall<T>(path, method, params);
-        return (result as T);
-    }
-
-    private async makeApiCall<T>(
-        path: string,
-        method: string,
-        params?: Record<string, string>
-    ): Promise<GitHubApiResponse<T>> {
-        this.updateMetricCounters(true);
-        const cacheKey = this.buildCacheKey(path, params);
-        const cached = this.getFromCache<GitHubApiResponse<T>>(cacheKey);
+    private handleError(operation: string, error: unknown): void {
+        this.performanceMetrics.failureCount++;
         
-        if (cached) {
-            this.cacheHits++;
-            this.metrics.requests.inc({ method, status: 'cache_hit' });
-            return cached;
+        const errorType = error instanceof CopyrightError 
+            ? error.code 
+            : error instanceof AxiosError 
+                ? this.determineErrorType(error)
+                : GitHubErrorType.UNKNOWN;
+
+        this.metrics.errors.inc({ 
+            operation, 
+            type: errorType
+        });
+        
+        if (error instanceof AxiosError) {
+            this.handleAxiosError(error);
         }
 
-        this.cacheMisses++;
-        const timer = this.metrics.duration.startTimer();
-        
-        try {
-            const result = await this.circuitBreaker.execute(() => 
-                this.client.get<GitHubApiResponse<T>>(path)
-            );
-            
-            this.metrics.requests.inc({ method, status: 'success' });
-            this.updateRateLimitMetrics(result.headers);
-            this.updateLatencyMetrics();
-            
-            this.setCache(cacheKey, result.data as GitHubCacheData);
-            return result.data;
-        } catch (error) {
-            this.updateMetricCounters(false);
-            this.handleApiError(error as AxiosError, method);
-            throw error;
-        } finally {
-            timer();
-        }
-    }
-
-    private initializeClient(config: GitHubConfig): void {
-        this.client = axios.create({
-            baseURL: config.baseUrl,
-            headers: {
-                Authorization: `Bearer ${config.token}`,
-                Accept: 'application/vnd.github.v3+json'
-            },
-            timeout: config.timeout || 10000
-        });
-    }
-
-    private initializeCircuitBreaker(config: GitHubConfig): void {
-        this.circuitBreaker = new CircuitBreaker('github-api', {
-            failureThreshold: config.retry?.attempts || 3,
-            resetTimeout: config.retry?.backoff ? 60000 : 30000
-        });
-    }
-
-    private initializeCache(): void {
-        this.cache = new LRUCache({
-            max: 500,
-            ttl: 1000 * 60 * 5,
-            updateAgeOnGet: true,
-            updateAgeOnHas: true
-        });
-    }
-
-    private initializeCacheMonitoring(): void {
-        this.cacheMonitorInterval = setInterval(() => {
-            const size = this.calculateCacheSize();
-            this.metrics.cacheSize.set(size);
-        }, 60000) as NodeJS.Timeout;
-    }
-
-    private buildCacheKey(path: string, params?: Record<string, string>): string {
-        return params ? `${path}:${JSON.stringify(params)}` : path;
-    }
-
-    private getFromCache<T>(key: string): T | null {
-        const entry = this.cache.get(key);
-        if (entry) {
-            this.cacheHits++;
-            return entry.data as T;
-        }
-        this.cacheMisses++;
-        return null;
-    }
-
-    private setCache<T extends GitHubCacheData>(key: string, data: T): void {
-        this.cache.set(key, {
-            data,
-            timestamp: Date.now()
-        });
-    }
-
-    private handleApiError(error: AxiosError, method: string): void {
-        const errorType = this.determineErrorType(error);
-        
-        this.metrics.errors.inc({ type: errorType });
-        
         logger.error({
-            error,
-            method,
-            type: errorType,
+            operation,
+            errorType,
+            error: error instanceof Error ? error.message : 'Unknown error'
+        }, 'GitHub operation failed');
+    }
+
+    private handleAxiosError(error: AxiosError): void {
+        if (error.response?.status === 429) {
+            const resetTime = parseInt(error.response.headers['x-ratelimit-reset'] as string, 10);
+            logger.warn({
+                resetTime: new Date(resetTime * 1000),
+                remaining: parseInt(error.response.headers['x-ratelimit-remaining'] as string, 10)
+            }, 'Rate limit exceeded');
+        }
+    }
+
+    private transformError(error: AxiosError): CopyrightError {
+        const githubError: GitHubError = {
+            type: this.determineErrorType(error),
             status: error.response?.status,
-            path: error.config?.url
-        }, `GitHub API Error: ${errorType}`);
-        if (errorType === GitHubErrorType.RATE_LIMIT) {
-            const headers = error.response?.headers as AxiosResponseHeaders;
-            this.handleRateLimit(headers);
+            message: error.message,
+            context: 'GitHub API',
+            data: error.response?.data
+        };
+
+        switch (githubError.type) {
+            case GitHubErrorType.RATE_LIMIT:
+                return new CopyrightError(
+                    CopyrightErrorCode.RATE_LIMIT_ERROR,
+                    'GitHub API rate limit exceeded'
+                );
+            
+            case GitHubErrorType.NOT_FOUND:
+                return new CopyrightError(
+                    CopyrightErrorCode.NOT_FOUND,
+                    'GitHub resource not found'
+                );
+            
+            case GitHubErrorType.UNAUTHORIZED:
+                return new CopyrightError(
+                    CopyrightErrorCode.GITHUB_API_ERROR,
+                    'GitHub API authentication failed'
+                );
+            
+            case GitHubErrorType.NETWORK:
+                return new CopyrightError(
+                    CopyrightErrorCode.GITHUB_API_ERROR,
+                    'Network error while accessing GitHub API'
+                );
+            
+            case GitHubErrorType.VALIDATION:
+                return new CopyrightError(
+                    CopyrightErrorCode.VALIDATION_ERROR,
+                    'Invalid GitHub API request'
+                );
+            
+            default:
+                return new CopyrightError(
+                    CopyrightErrorCode.GITHUB_API_ERROR,
+                    'GitHub API request failed'
+                );
         }
     }
 
     private determineErrorType(error: AxiosError): GitHubErrorType {
-        switch (error.response?.status) {
+        if (!error.response) {
+            return GitHubErrorType.NETWORK;
+        }
+
+        switch (error.response.status) {
             case 429:
                 return GitHubErrorType.RATE_LIMIT;
             case 404:
                 return GitHubErrorType.NOT_FOUND;
             case 401:
                 return GitHubErrorType.UNAUTHORIZED;
+            case 400:
+                return GitHubErrorType.VALIDATION;
             default:
                 return GitHubErrorType.UNKNOWN;
         }
     }
 
-    private handleRateLimit(headers?: AxiosResponseHeaders): void {
-        if (!headers) {
-            logger.warn('No headers provided for rate limit handling');
-            return;
-        }
+    private initializeClient(): AxiosInstance {
+        return axios.create({
+            baseURL: this.config.baseUrl,
+            timeout: this.config.timeout || 10000,
+            headers: {
+                Authorization: `Bearer ${this.config.token}`,
+                Accept: 'application/vnd.github.v3+json'
+            }
+        });
+    }
 
-        const resetTime = parseInt(headers['x-ratelimit-reset'] || '0', 10);
-        if (resetTime) {
-            const now = Date.now() / 1000;
-            const timeToReset = Math.max(0, resetTime - now);
-            
-            logger.warn({
-                resetTime: new Date(resetTime * 1000),
-                timeToReset,
-                remaining: parseInt(headers['x-ratelimit-remaining'] || '0', 10)
-            }, 'GitHub API rate limit exceeded');
+    private initializeCircuitBreaker(): CircuitBreaker {
+        return new CircuitBreaker('github-api', {
+            failureThreshold: this.config.retry.attempts,
+            resetTimeout: 30000
+        });
+    }
+
+    private initializeCache(): LRUCache<string, CacheEntry<GitHubRepository[] | GitHubRepository | GitHubContent>> {
+        return new LRUCache({
+            max: 500,
+            ttl: 1000 * 60 * 5, // 5 minutes
+            updateAgeOnGet: true
+        });
+    }
+
+    private initializeCacheMonitoring(): NodeJS.Timeout {
+        return setInterval(() => {
+            this.updateCacheMetrics();
+        }, 60000) as NodeJS.Timeout;
+    }
+
+    private updateCacheMetrics(): void {
+        const size = this.cache.size;
+        logger.debug({ size }, 'Cache size updated');
+    }
+
+    private updateRateLimitMetrics(headers: AxiosResponseHeaders): void {
+        const remaining = parseInt(headers['x-ratelimit-remaining'] as string, 10);
+        if (!isNaN(remaining)) {
+            this.metrics.rateLimit.set(remaining);
         }
     }
 
     private validateConfig(config: GitHubConfig): void {
-        logger.debug('Validating GitHub configuration');
         if (!config.token) {
-            logger.error('GitHub token is missing');
-            throw new Error('GitHub token is required');
+            throw new CopyrightError(
+                CopyrightErrorCode.INITIALIZATION_ERROR,
+                'GitHub token is required'
+            );
         }
         if (!config.baseUrl) {
-            logger.error('GitHub base URL is missing');
-            throw new Error('GitHub base URL is required');
+            throw new CopyrightError(
+                CopyrightErrorCode.INITIALIZATION_ERROR,
+                'GitHub base URL is required'
+            );
         }
+    }
+
+    private buildCacheKey(operation: string, params: Record<string, unknown>): string {
+        return `github:${operation}:${JSON.stringify(params)}`;
+    }
+
+    private getFromCache<T>(key: string): T | null {
+        const entry = this.cache.get(key);
+        if (entry && entry.expiresAt > Date.now()) {
+            this.performanceMetrics.cacheHits++;
+            return entry.data as T;
+        }
+        this.performanceMetrics.cacheMisses++;
+        return null;
+    }
+
+    private setCache<T extends GitHubRepository[] | GitHubRepository | GitHubContent>(
+        key: string, 
+        data: T
+    ): void {
+        this.cache.set(key, {
+            data,
+            timestamp: Date.now(),
+            expiresAt: Date.now() + (this.config.cache?.ttl || 300000)
+        });
+    }
+
+    public dispose(): void {
+        clearInterval(this.cacheMonitorInterval);
+        this.cache.clear();
+        logger.info('GitHubUtility disposed successfully');
     }
 }

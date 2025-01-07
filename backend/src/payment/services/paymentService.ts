@@ -11,7 +11,7 @@ class PaymentService {
 
   constructor() {
     this.stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-      apiVersion: '2024-11-20.acacia',
+      apiVersion: '2024-12-18.acacia',
       telemetry: false // Disable in production
     });
     this.redis = new Redis(process.env.REDIS_URL!);

@@ -29,6 +29,16 @@ export class CircuitBreaker {
         throw error;
       }
     }
+
+    // Returns whether the circuit breaker is in closed state
+    isClosed(): boolean {
+        return !this.isOpen();
+    }
+
+    // Returns the current number of consecutive failures
+    getFailureCount(): number {
+        return this.failures;
+    }
   
     // Determines if circuit is in its open state to prevent further calls.
     private isOpen(): boolean {
