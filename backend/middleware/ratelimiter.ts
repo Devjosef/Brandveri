@@ -201,6 +201,50 @@ export const paymentRateLimiter = rateLimit({
   }
 });
 
+// Export custom store
+export { customStore };
+
+// Copyright rate limiters
+export const copyrightLimiter = {
+    search: rateLimit({
+        windowMs: Config.RATE_LIMIT_WINDOW_MS,
+        max: 100, // 100 requests per window
+        standardHeaders: true,
+        legacyHeaders: false,
+        store: customStore,
+        keyGenerator: (req) => {
+            return req.ip + ':copyright-search';
+        },
+        handler: (_req: Request, res: Response) => {
+            rateLimitMetrics.exceeded.inc({ limiter_type: 'copyright_search' });
+            res.status(429).json({
+                success: false,
+                error: 'Too many search requests, please try again later',
+                code: 'RATE_LIMIT_EXCEEDED'
+            });
+        }
+    }),
+
+    details: rateLimit({
+        windowMs: Config.RATE_LIMIT_WINDOW_MS,
+        max: 200, // 200 requests per window
+        standardHeaders: true,
+        legacyHeaders: false,
+        store: customStore,
+        keyGenerator: (req) => {
+            return req.ip + ':copyright-details';
+        },
+        handler: (_req: Request, res: Response) => {
+            rateLimitMetrics.exceeded.inc({ limiter_type: 'copyright_details' });
+            res.status(429).json({
+                success: false,
+                error: 'Too many detail requests, please try again later',
+                code: 'RATE_LIMIT_EXCEEDED'
+            });
+        }
+    })
+} as const;
+
 // Export for testing purposes
 export const __testing__ = {
   clearStore: () => rateLimitStore.clear(),

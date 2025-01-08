@@ -17,7 +17,20 @@ const searchQuerySchema = z.object({
     limit: z.number().optional().default(10)
 });
 
-class CopyrightController {
+// Add interface for controller methods
+interface ICopyrightController {
+    searchSoftwareCopyright(req: Request, res: Response, next: NextFunction): Promise<Response | void>;
+    getSoftwareCopyrightDetails(req: Request, res: Response, next: NextFunction): Promise<Response | void>;
+}
+
+class CopyrightController implements ICopyrightController {
+    private readonly REQUEST_TIMEOUT = 30000; // 30 seconds
+
+    constructor() {
+        this.searchSoftwareCopyright = this.searchSoftwareCopyright.bind(this);
+        this.getSoftwareCopyrightDetails = this.getSoftwareCopyrightDetails.bind(this);
+    }
+
     /**
      * Search for software copyrights
      * Reasoning: 
@@ -30,6 +43,22 @@ class CopyrightController {
         res: Response, 
         next: NextFunction
     ): Promise<Response | void> {
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Request timeout')), this.REQUEST_TIMEOUT);
+        });
+
+        try {
+            const result = await Promise.race([
+                this._handleSearch(req),
+                timeoutPromise
+            ]);
+            return res.status(200).json(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    private async _handleSearch(req: Request) {
         try {
             const validatedQuery = searchQuerySchema.parse({
                 query: req.query.q,
@@ -46,7 +75,7 @@ class CopyrightController {
                 validatedQuery.query
             );
 
-            return res.status(200).json({
+            return {
                 success: true,
                 data: results.data,
                 metadata: {
@@ -55,7 +84,7 @@ class CopyrightController {
                     page: validatedQuery.page,
                     limit: validatedQuery.limit
                 }
-            });
+            };
 
         } catch (error) {
             logger.error({ 
@@ -65,14 +94,17 @@ class CopyrightController {
             }, 'Software copyright search failed');
 
             if (error instanceof z.ZodError) {
-                return res.status(400).json({
+                return {
                     success: false,
                     error: 'Invalid search parameters',
                     details: error.errors
-                });
+                };
             }
 
-            return next(error);
+            return {
+                success: false,
+                error: 'Request timed out'
+            };
         }
     }
 
@@ -116,4 +148,5 @@ class CopyrightController {
     }
 }
 
+// Export singleton instance with bound methods
 export const copyrightController = new CopyrightController();

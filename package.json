@@ -13,6 +13,7 @@
     "@types/bcrypt": "^5.0.2",
     "axios": "^1.7.7",
     "bcrypt": "^5.1.1",
+    "compression": "^1.7.5",
     "connect-redis": "^7.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -38,6 +39,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/express-session": "^1.18.0",

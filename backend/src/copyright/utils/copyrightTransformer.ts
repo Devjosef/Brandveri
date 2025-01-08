@@ -7,12 +7,8 @@ import type {
 import { CopyrightError, CopyrightErrorCode } from './copyrightError';
 import { loggers } from '../../../observability/contextLoggers';
 import { Counter } from 'prom-client';
-
-// Domain-specific validators
-import { GitHubValidator } from './validators/githubValidator';
-import { CopyrightValidator } from './validators/copyrightValidator';
-
-// Pure transformation functions
+import { GitHubValidator } from './githubValidator';
+import { CopyrightValidator } from './copyrightValidator';
 import { 
     transformRepository,
     transformLicense,
@@ -37,45 +33,31 @@ const transformMetrics = Object.freeze({
 
 /**
  * Transforms GitHub repository data into copyright information.
- * Follows functional programming principles and maintains immutability.
+ * Maintains immutability and provides validation.
  */
 export class CopyrightTransformer {
-    private readonly githubValidator: GitHubValidator;
-    private readonly copyrightValidator: CopyrightValidator;
-
-    constructor() {
-        this.githubValidator = new GitHubValidator();
-        this.copyrightValidator = new CopyrightValidator();
-    }
+    // Cache validator instances at class level with explicit type annotations
+    private static readonly githubValidator: GitHubValidator = new GitHubValidator();
+    private static readonly copyrightValidator: CopyrightValidator = new CopyrightValidator();
 
     /**
-     * Pure transformation function that converts GitHub data to copyright data
+     * Pure transformation function that converts GitHub data to copyright data.
      */
     public transform(repo: GitHubRepository): SoftwareCopyright {
         try {
-            // Validate input
             this.validateInput(repo);
-
-            // Transform data using pure functions
             const copyright = this.createCopyright(repo);
-
-            // Validate output
             this.validateOutput(copyright);
-
             return copyright;
-
         } catch (error) {
             this.handleTransformError(error, repo);
             throw error;
         }
     }
 
-    /**
-     * Input validation using composition
-     */
     private validateInput(repo: GitHubRepository): void {
         try {
-            this.githubValidator.validate(repo);
+            CopyrightTransformer.githubValidator.validate(repo);
         } catch (error) {
             throw new CopyrightError(
                 CopyrightErrorCode.VALIDATION_ERROR,
@@ -85,9 +67,6 @@ export class CopyrightTransformer {
         }
     }
 
-    /**
-     * Pure function to create copyright data
-     */
     private createCopyright(repo: GitHubRepository): SoftwareCopyright {
         return Object.freeze({
             id: String(repo.id),
@@ -103,37 +82,24 @@ export class CopyrightTransformer {
         });
     }
 
-    /**
-     * Pure function to determine repository type
-     */
     private determineType(repo: GitHubRepository): SoftwareCopyright['type'] {
         if (repo.private) return 'PROPRIETARY';
         if (repo.license) return 'OPEN_SOURCE';
         return 'UNKNOWN';
     }
 
-    /**
-     * Transform license with validation
-     */
     private transformLicenseWithValidation(
         license: GitHubRepository['license']
     ): License | null {
         if (!license) return null;
         
-        const transformedLicense: License = {
-            type: license.spdx_id || 'UNKNOWN',
-            url: license.url,
-            permissions: [],
-            limitations: []
-        };
-
-        this.validateLicense(transformedLicense);
+        const transformedLicense = transformLicense(license);
+        if (transformedLicense) {
+            this.validateLicense(transformedLicense);
+        }
         return transformedLicense;
     }
 
-    /**
-     * Validate license data
-     */
     private validateLicense(license: License): void {
         if (!license.type) {
             throw new CopyrightError(
@@ -143,12 +109,9 @@ export class CopyrightTransformer {
         }
     }
 
-    /**
-     * Output validation
-     */
     private validateOutput(copyright: SoftwareCopyright): void {
         try {
-            this.copyrightValidator.validate(copyright);
+            CopyrightTransformer.copyrightValidator.validate(copyright);
         } catch (error) {
             throw new CopyrightError(
                 CopyrightErrorCode.VALIDATION_ERROR,
@@ -158,9 +121,6 @@ export class CopyrightTransformer {
         }
     }
 
-    /**
-     * Error handling with proper metrics
-     */
     private handleTransformError(error: unknown, context: unknown): void {
         transformMetrics.errors.inc({ 
             type: error instanceof CopyrightError ? error.code : 'UNKNOWN_ERROR',
@@ -174,9 +134,6 @@ export class CopyrightTransformer {
         }, 'Transform operation failed');
     }
 
-    /**
-     * Create API response with proper typing
-     */
     public createApiResponse<T>(data: T, requestId: string): ApiResponse<T> {
         return Object.freeze({
             success: true,
