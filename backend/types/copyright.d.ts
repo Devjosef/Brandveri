@@ -45,6 +45,19 @@ export interface SoftwareCopyright {
 }
 
 /**
+ * Search Result Types
+ */
+export type SoftwareSearchResult = SoftwareCopyright;
+
+export interface SearchResultMetadata extends ResponseMetadata {
+    readonly query: string;
+    readonly page: number;
+    readonly limit: number;
+    readonly total?: number;
+    readonly hasMore?: boolean;
+}
+
+/**
  * API Types
  */
 export interface ApiResponse<T> {
@@ -158,7 +171,7 @@ export { GitHubRepository };
 export interface SoftwareSearchParams {
     readonly query: string;
     readonly type?: 'PROPRIETARY' | 'OPEN_SOURCE' | 'ALL';
-    readonly license?: ReadonlyArray<string>;
+    readonly license?: string;
     readonly minStars?: number;
     readonly minConfidence?: number;
     readonly page: number;

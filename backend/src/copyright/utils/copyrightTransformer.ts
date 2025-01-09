@@ -41,9 +41,10 @@ export class CopyrightTransformer {
     private static readonly copyrightValidator: CopyrightValidator = new CopyrightValidator();
 
     /**
-     * Pure transformation function that converts GitHub data to copyright data.
+     * Transforms GitHub repository data into copyright information.
+     * Maintains immutability and provides validation.
      */
-    public transform(repo: GitHubRepository): SoftwareCopyright {
+    public async transformGithubData(repo: GitHubRepository): Promise<SoftwareCopyright> {
         try {
             this.validateInput(repo);
             const copyright = this.createCopyright(repo);
@@ -54,6 +55,9 @@ export class CopyrightTransformer {
             throw error;
         }
     }
+
+    // Keeping the old method name for backward compatibility if needed
+    public transform = this.transformGithubData;
 
     private validateInput(repo: GitHubRepository): void {
         try {

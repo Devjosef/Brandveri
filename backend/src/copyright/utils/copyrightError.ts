@@ -18,7 +18,10 @@ export enum CopyrightErrorCode {
     GITHUB_API_ERROR = 502,      // Bad Gateway
     CACHE_ERROR = 503,           // Service Unavailable
     UNKNOWN_ERROR = 500,         // Internal Server Error
-    INITIALIZATION_ERROR = 500   // Internal Server Error
+    INITIALIZATION_ERROR = 500,
+    CIRCUIT_BREAKER_ERROR = 'CIRCUIT_BREAKER_ERROR',
+    SHUTDOWN_ERROR = 'SHUTDOWN_ERROR',
+    INTERNAL_ERROR = 'INTERNAL_ERROR'
 }
 
 /**
@@ -60,7 +63,7 @@ export class CopyrightError extends Error {
      * Determine error category based on error code.
      */
     private determineCategory(code: CopyrightErrorCode): ErrorCategory {
-        if (code < 500) return ErrorCategory.CLIENT;
+        if (typeof code === 'number' && code < 500) return ErrorCategory.CLIENT;
         if (code === CopyrightErrorCode.GITHUB_API_ERROR) return ErrorCategory.EXTERNAL;
         return ErrorCategory.SERVER;
     }

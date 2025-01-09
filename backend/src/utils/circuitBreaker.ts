@@ -1,18 +1,29 @@
-// Implements circuit breaker pattern to prevent cascading failures in this distributed system
-export class CircuitBreaker {
+import {
+  CircuitBreakerOptions,
+  CircuitBreakerHealth,
+  ICircuitBreaker
+} from '../../types/circuitBreaker';
+
+
+// Implements circuit breaker pattern to prevent cascading failures in this distributed system.
+export class CircuitBreaker implements ICircuitBreaker {
     // Tracks consecutive failures to determine circuit state.
-    private failures = 0;
+    private failures: number = 0;
     // Tracks when the last failure occurred for timeout calculations.
-    private lastFailureTime?: number;
+    private lastFailureTime?: Date;
+    private readonly name: string;
+    private readonly failureThreshold: number;
+    private readonly resetTimeout: number;
     
     constructor(
-      private readonly name: string,
-      // Configures failure tolerance and recovery timing
-      private readonly options: {
-        failureThreshold: number;  // Number of failures before the circuit opens
-        resetTimeout: number;      // Time in ms before attempting a recovery
-      }
-    ) {}
+      name: string,
+      // Configures failure tolerance and recovery timing.
+      options: CircuitBreakerOptions
+    ) {
+        this.name = name;
+        this.failureThreshold = options.failureThreshold;
+        this.resetTimeout = options.resetTimeout;
+    }
   
     // Wraps async operations with circuit breaker protection.
     async execute<T>(fn: () => Promise<T>): Promise<T> {
@@ -30,22 +41,23 @@ export class CircuitBreaker {
       }
     }
 
-    // Returns whether the circuit breaker is in closed state
+    // Returns whether the circuit breaker is in closed state.
     isClosed(): boolean {
         return !this.isOpen();
     }
 
-    // Returns the current number of consecutive failures
+    // Returns the current number of consecutive failures.
     getFailureCount(): number {
         return this.failures;
     }
   
     // Determines if circuit is in its open state to prevent further calls.
-    private isOpen(): boolean {
-      if (this.failures >= this.options.failureThreshold) {
-        const now = Date.now();
+    public isOpen(): boolean {
+      if (this.failures >= this.failureThreshold) {
+        const now = new Date();
         // Allow circuit to close after a timeout period.
-        if (this.lastFailureTime && (now - this.lastFailureTime) > this.options.resetTimeout) {
+        if (this.lastFailureTime && 
+            (now.getTime() - this.lastFailureTime.getTime()) > this.resetTimeout) {
           this.reset();
           return false;
         }
@@ -55,17 +67,27 @@ export class CircuitBreaker {
     }
   
     // Reset the circuit state after a successful operation or timeout.
-    private reset(): void {
+    public reset(): void {
       this.failures = 0;
       this.lastFailureTime = undefined;
     }
   
     // Tracks failures to determine when to open a circuit.
-    private recordFailure(): void {
+    public recordFailure(): void {
       this.failures++;
-      this.lastFailureTime = Date.now();
+      this.lastFailureTime = new Date();
+    }
+
+    public getHealth(): CircuitBreakerHealth {
+        return {
+            status: this.isOpen() ? 'open' : 'closed',
+            failures: this.failures,
+            failureThreshold: this.failureThreshold,
+            resetTimeout: this.resetTimeout,
+            lastFailureTime: this.lastFailureTime?.toISOString()
+        };
     }
 }
 
   // Prevents overwhelming the API during issues, provides fast failure when service is degraded.
-  // Allows system to recover gracefully
+  // Allows the system to recover gracefully.

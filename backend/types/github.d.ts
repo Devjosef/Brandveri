@@ -135,7 +135,7 @@ export interface GitHubMetrics {
 export interface GitHubRateLimit {
     limit: number;
     remaining: number;
-    reset: number;
+    reset: string;
     used: number;
 }
 
@@ -149,12 +149,18 @@ export interface GitHubUtilityInterface {
     getRateLimit(): Promise<GitHubRateLimit>;
 }
 
-// Health and monitoring
+/**
+ * GitHub Service Health Types
+ */
 export interface GitHubServiceHealth {
-    isHealthy: boolean;
-    lastCheck: Date;
-    failureCount: number;
-    rateLimitInfo: GitHubRateLimit;
+    status: 'healthy' | 'degraded' | 'unhealthy';
+    message?: string;
+    timestamp: string;
+    rateLimit?: {
+        remaining: number;
+        reset: string;
+    };
+    latency?: number;
 }
 
 // Shared configuration types

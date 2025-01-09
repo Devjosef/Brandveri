@@ -1,6 +1,6 @@
 import client from 'prom-client';
 
-export type OperationType = 'get' | 'set' | 'del' | 'ping' | 'metrics_collection';
+export type OperationType = 'get' | 'set' | 'del' | 'ping' | 'clear' | 'reset';
 export type OperationStatus = 'success' | 'error';
 
 export interface MetricsCollector {

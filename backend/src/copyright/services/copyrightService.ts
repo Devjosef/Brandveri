@@ -1,13 +1,13 @@
 import { inject, injectable } from 'inversify';
+import { scrypt } from 'crypto'
 import { GitHubUtility } from '../utils/githubUtility';
 import { CopyrightTransformer } from '../utils/copyrightTransformer';
 import { CopyrightValidator } from '../utils/copyrightValidator';
 import { copyrightCache } from '../../utils/cache';
-import { RequestContext } from '../../utils/requestContext';
 import { loggers } from '../../../observability/contextLoggers';
 import { CopyrightError, CopyrightErrorCode } from '../utils/copyrightError';
 import { CircuitBreaker } from '../../utils/circuitBreaker';
-import { sensitiveOpsLimiter } from '../../../middleware/ratelimiter';
+import { customStore } from '../../../middleware/ratelimiter';
 import { crConfig } from '../utils/crConfig';
 import { Counter, Histogram, Gauge } from 'prom-client';
 import type { 
@@ -19,7 +19,8 @@ import type {
     ICopyrightService,
     GitHubRepository
 } from '../../../types/copyright';
-import type { GitHubConfig } from '../../../types/github';
+import { z } from 'zod';
+
 
 const logger = loggers.copyright;
 
@@ -53,9 +54,8 @@ export class CopyrightService implements ICopyrightService {
             help: 'Number of concurrent operations'
         })
     };
-
     private readonly circuitBreaker: CircuitBreaker;
-    private readonly rateLimiter: RateLimiter;
+    private readonly rateLimiter: typeof customStore;
     private isShuttingDown = false;
 
     constructor(
@@ -69,11 +69,39 @@ export class CopyrightService implements ICopyrightService {
             failureThreshold: config.GITHUB.RETRY_ATTEMPTS,
             resetTimeout: config.GITHUB.RETRY_DELAY
         });
-        this.rateLimiter = new RateLimiter({
-            maxRequests: config.SEARCH.MAX_CONCURRENT_SEARCHES,
-            perMilliseconds: 1000
-        });
+        this.rateLimiter = customStore;
         this.setupGracefulShutdown();
+    }
+
+    /**
+     * Validates that all required dependencies are properly injected.
+     * @throws {CopyrightError} If any dependency is missing
+     */
+    private validateDependencies(): void {
+        if (!this.github) {
+            throw new CopyrightError(
+                CopyrightErrorCode.INITIALIZATION_ERROR,
+                'GitHubUtility dependency not injected'
+            );
+        }
+        if (!this.transformer) {
+            throw new CopyrightError(
+                CopyrightErrorCode.INITIALIZATION_ERROR,
+                'CopyrightTransformer dependency not injected'
+            );
+        }
+        if (!this.validator) {
+            throw new CopyrightError(
+                CopyrightErrorCode.INITIALIZATION_ERROR,
+                'CopyrightValidator dependency not injected'
+            );
+        }
+        if (!this.config) {
+            throw new CopyrightError(
+                CopyrightErrorCode.INITIALIZATION_ERROR,
+                'Config dependency not injected'
+            );
+        }
     }
 
     /**
@@ -84,12 +112,12 @@ export class CopyrightService implements ICopyrightService {
         query: string,
         params?: Partial<SoftwareSearchParams>
     ): Promise<ApiResponse<SoftwareSearchResult>> {
-        const context = this.initializeRequestContext();
         const timer = this.metrics.duration.startTimer({ operation: 'search' });
         this.metrics.concurrent.inc();
+        const requestId = crypto.randomUUID();
 
         try {
-            await this.rateLimiter.acquire();
+            await this.rateLimiter.consume('search');
             await this.checkCircuitBreaker();
 
             const validated = this.validator.validateSearchQuery(query, params);
@@ -103,7 +131,7 @@ export class CopyrightService implements ICopyrightService {
                     status: 'success',
                     cache: 'hit'
                 });
-                return this.transformer.createApiResponse(cached, context.requestId);
+                return this.transformer.createApiResponse(cached, requestId);
             }
 
             // Slow path: API call with retry
@@ -119,7 +147,7 @@ export class CopyrightService implements ICopyrightService {
                 status: 'success',
                 cache: 'miss'
             });
-            return this.transformer.createApiResponse(results, context.requestId);
+            return this.transformer.createApiResponse(results, requestId,);
 
         } catch (error) {
             this.handleOperationError('search', error, { query, params });
@@ -127,24 +155,23 @@ export class CopyrightService implements ICopyrightService {
         } finally {
             timer();
             this.metrics.concurrent.dec();
-            this.rateLimiter.release();
         }
     }
 
     /**
-     * Retrieves detailed copyright information for a specific repository
+     * Retrieves detailed copyright information for a specific repository.
      * @throws {CopyrightError} On validation, rate limit, or service errors
      */
     async getRepositoryDetails(
         owner: string, 
         repo: string
     ): Promise<ApiResponse<SoftwareSearchResult>> {
-        const context = this.initializeRequestContext();
         const timer = this.metrics.duration.startTimer({ operation: 'details' });
         this.metrics.concurrent.inc();
+        const requestId = crypto.randomUUID();
 
         try {
-            await this.rateLimiter.acquire();
+            await this.rateLimiter.consume('details');
             await this.checkCircuitBreaker();
 
             const validated = this.validator.validateRepoParams(owner, repo);
@@ -157,14 +184,14 @@ export class CopyrightService implements ICopyrightService {
                     status: 'success',
                     cache: 'hit'
                 });
-                return this.transformer.createApiResponse(cached, context.requestId);
+                return this.transformer.createApiResponse(cached, requestId);
             }
 
             const repository = await this.executeWithRetry(() =>
                 this.github.getRepository(validated.owner, validated.repo)
             );
             
-            const result = this.transformer.transformGithubData(repository);
+            const result = await this.transformer.transformGithubData(repository);
             await this.cacheResults(cacheKey, [result]);
 
             this.metrics.operations.inc({ 
@@ -172,7 +199,7 @@ export class CopyrightService implements ICopyrightService {
                 status: 'success',
                 cache: 'miss'
             });
-            return this.transformer.createApiResponse([result], context.requestId);
+            return this.transformer.createApiResponse(result, requestId);
 
         } catch (error) {
             this.handleOperationError('details', error, { owner, repo });
@@ -180,7 +207,6 @@ export class CopyrightService implements ICopyrightService {
         } finally {
             timer();
             this.metrics.concurrent.dec();
-            this.rateLimiter.release();
         }
     }
         /**
@@ -223,27 +249,50 @@ export class CopyrightService implements ICopyrightService {
         }
     
         /**
-         * Provides service metrics for monitoring
-         */
+        * Provides comprehensive service metrics for monitoring and observability
+        * @returns {CopyrightMetrics} Standardized metrics object
+        */
         getMetrics(): CopyrightMetrics {
-            return {
-                requests: {
-                    total: this.metrics.operations.get(),
-                    errors: this.metrics.errors.get(),
-                    concurrent: this.metrics.concurrent.get()
-                },
-                performance: {
-                    averageResponseTime: this.metrics.duration.get().mean,
-                    p95ResponseTime: this.metrics.duration.get().p95,
-                    p99ResponseTime: this.metrics.duration.get().p99
-                },
-                cache: {
-                    hitRate: this.calculateCacheHitRate(),
-                    size: copyrightCache.size,
-                    capacity: copyrightCache.max
-                },
-                github: this.github.getMetrics()
-            };
+            return Object.freeze({
+                requests: Object.freeze({
+                    total: 0,
+                    errors: 0,
+                    concurrent: 0,
+                }),
+                performance: Object.freeze({ 
+                    averageResponseTime: 0,
+                    p95ResponseTime: 0,
+                    p99ResponseTime: 0
+                }),
+                cache: Object.freeze({
+                    hitRate: 0,
+                    size: 0,
+                    capacity: 0
+                }),
+                github: Object.freeze({
+                    rateLimit: Object.freeze({
+                        remaining: 0,
+                        reset: new Date().toISOString(),
+                        limit: 0,
+                        used: 0
+                    }),
+                    requests: Object.freeze({
+                        total: 0,
+                        successful: 0,
+                        failed: 0
+                    }),
+                    latency: Object.freeze({
+                        avg: 0,
+                        p95: 0,
+                        p99: 0
+                    }),
+                    cache: Object.freeze({
+                        hits: 0,
+                        misses: 0,
+                        size: 0
+                    })
+                })
+            });
         }
     
         /**
@@ -253,7 +302,7 @@ export class CopyrightService implements ICopyrightService {
             this.isShuttingDown = true;
             
             try {
-                // Wait for ongoing operations to complete
+                // Wait for ongoing operations to complete.
                 await this.waitForOperationsToComplete();
                 
                 // Cleanup resources
@@ -275,7 +324,7 @@ export class CopyrightService implements ICopyrightService {
         // Private helper methods
         private async waitForOperationsToComplete(timeout = 30000): Promise<void> {
             const start = Date.now();
-            while (this.metrics.concurrent.get() > 0) {
+            while ((await this.metrics.concurrent.get()).values[0].value > 0) {
                 if (Date.now() - start > timeout) {
                     throw new CopyrightError(
                         CopyrightErrorCode.SHUTDOWN_ERROR,
@@ -357,11 +406,24 @@ export class CopyrightService implements ICopyrightService {
             });
         }
     
-        private calculateCacheHitRate(): number {
-            const hits = this.metrics.operations.get({ cache: 'hit' });
-            const total = this.metrics.operations.get();
-            return total > 0 ? hits / total : 0;
-        }
+        /**
+ * Calculates the cache hit rate from metrics
+ * @returns {number} Hit rate as a percentage (0-1)
+ */
+private async calculateCacheHitRate(): Promise<number> {
+    try {
+        const hitMetrics = await this.metrics.operations.get();  // Remove arguments
+        const totalMetrics = await this.metrics.operations.get(); // Remove arguments
+
+        const hits = hitMetrics.values[0]?.value ?? 0;
+        const total = totalMetrics.values[0]?.value ?? 0;
+
+        return total > 0 ? hits / total : 0;
+    } catch (error) {
+        logger.warn({ error }, 'Failed to calculate cache hit rate');
+        return 0;
+    }
+}
     
         private buildCacheKey(operation: string, params: Record<string, unknown>): string {
             return `copyright:${operation}:${JSON.stringify(params)}`;
@@ -391,5 +453,77 @@ export class CopyrightService implements ICopyrightService {
             }
     
             throw lastError;
+        }
+
+        /**
+         * Retrieves data from cache
+         * @param key Cache key
+         * @returns Cached data or null if not found
+         */
+        private async getFromCache<T>(key: string): Promise<T | null> {
+            try {
+                const cached = await copyrightCache.get<T>(key);
+                if (cached) {
+                    this.metrics.operations.inc({ 
+                        operation: 'cache',
+                        status: 'hit',
+                        cache: 'hit'
+                    });
+                    return cached;
+                }
+                return null;
+            } catch (error) {
+                logger.warn({ error, key }, 'Cache retrieval failed');
+                return null;
+            }
+        }
+
+        /**
+         * Stores data in cache
+         * @param key Cache key
+         * @param data Data to cache
+         */
+        private async setInCache<T>(key: string, data: T): Promise<void> {
+            try {
+                await copyrightCache.set(key, data);
+                this.metrics.operations.inc({ 
+                    operation: 'cache',
+                    status: 'success',
+                    cache: 'miss'
+                });
+            } catch (error) {
+                logger.warn({ error, key }, 'Cache storage failed');
+            }
+        }
+
+        /**
+         * Stores search results in cache
+         * @param key Cache key
+         * @param results Search results to cache
+         */
+        private async cacheResults(
+            key: string, 
+            results: SoftwareSearchResult[]
+        ): Promise<void> {
+            try {
+                await this.setInCache(key, results);
+                this.metrics.operations.inc({ 
+                    operation: 'cache',
+                    status: 'success',
+                    cache: 'write'
+                });
+            } catch (error) {
+                logger.warn({ 
+                    error, 
+                    key,
+                    resultsCount: results.length 
+                }, 'Failed to cache search results');
+                
+                // Don't throw - caching errors shouldn't affect the main flow.
+                this.metrics.errors.inc({ 
+                    operation: 'cache',
+                    type: 'write_error'
+                });
+            }
         }
     }

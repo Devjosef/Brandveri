@@ -120,6 +120,94 @@ export class ServiceCache {
             timer();
         }
     }
+
+    async clear(): Promise<void> {
+        const timer = serviceMetrics.duration.startTimer({ 
+            operation: 'clear',
+            service: this.service 
+        });
+        
+        try {
+            await cacheWrapper.clear({
+                service: this.service
+            });
+            
+            serviceMetrics.operations.inc({
+                operation: 'clear',
+                status: 'success',
+                service: this.service
+            });
+        } catch (error) {
+            serviceMetrics.operations.inc({
+                operation: 'clear',
+                status: 'error',
+                service: this.service
+            });
+            logger.warn({ error }, 'Cache clear failed');
+        } finally {
+            timer();
+        }
+    }
+
+    async reset(): Promise<void> {
+        const timer = serviceMetrics.duration.startTimer({ 
+            operation: 'reset',
+            service: this.service 
+        });
+        
+        try {
+            await cacheWrapper.reset({
+                service: this.service
+            });
+            
+            serviceMetrics.operations.inc({
+                operation: 'reset',
+                status: 'success',
+                service: this.service
+            });
+        } catch (error) {
+            serviceMetrics.operations.inc({
+                operation: 'reset',
+                status: 'error',
+                service: this.service
+            });
+            logger.warn({ error }, 'Cache reset failed');
+        } finally {
+            timer();
+        }
+    }
+
+    /**
+     * Deletes a specific key from the cache
+     * @param key Cache key to delete
+     */
+    async del(key: string): Promise<void> {
+        const timer = serviceMetrics.duration.startTimer({ 
+            operation: 'del',
+            service: this.service 
+        });
+        
+        try {
+            await cacheWrapper.del(key, {
+                service: this.service
+            });
+            
+            serviceMetrics.operations.inc({
+                operation: 'del',
+                status: 'success',
+                service: this.service
+            });
+        } catch (error) {
+            serviceMetrics.operations.inc({
+                operation: 'del',
+                status: 'error',
+                service: this.service
+            });
+            logger.warn({ error, key }, 'Cache delete failed');
+        } finally {
+            timer();
+        }
+    }
 }
 
 // Export service-specific instances

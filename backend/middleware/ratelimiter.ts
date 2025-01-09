@@ -44,134 +44,161 @@ const rateLimitStore = new LRUCache<string, RateLimitStoreData>({
 // Extend the RateLimitRequestHandler type
 interface ExtendedRateLimitRequestHandler extends RateLimitRequestHandler {
     consume: (key: string) => Promise<void>;
+    getCurrentLoad: () => number;
 }
 
 /**
  * Custom rate limiting store implementation using LRU cache
  * @implements {Store}
  */
-const customStore: Store & { consume: (key: string) => Promise<void> } = {
-  /**
-   * Initialize the store and warm it up
-   */
-  init: async function(): Promise<void> {
-    if (!isWarmedUp) {
-      try {
-        // Warm up operations here if needed
-        isWarmedUp = true;
-      } catch (error) {
-        console.error('Store initialization error:', error);
-      }
-    }
-  },
+const customStore: Store & { 
+    consume: (key: string) => Promise<void>;
+    getCurrentLoad: () => number;
+    reset: () => Promise<void>;
+} = {
+    /**
+     * Initialize the store and warm it up
+     */
+    init: async function(): Promise<void> {
+        if (!isWarmedUp) {
+            try {
+                // Warm up operations here if needed
+                isWarmedUp = true;
+            } catch (error) {
+                console.error('Store initialization error:', error);
+            }
+        }
+    },
 
-  /**
-   * Get rate limit info for a key
-   * @param {string} key - The rate limit key
-   * @returns {Promise<ClientRateLimitInfo | undefined>}
-   */
-  async get(key: string) {
-    const timer = rateLimitMetrics.duration.startTimer({ operation: 'get' });
-    try {
-      const data = rateLimitStore.get(sanitizeKey(key));
-      if (!data) return undefined;
-      return {
-        totalHits: data.hits,
-        resetTime: data.resetTime
-      };
-    } catch (error) {
-      console.error('Rate limit store get error:', error);
-      return undefined;
-    } finally {
-      timer();
-    }
-  },
+    /**
+     * Get current load (number of active requests)
+     */
+    getCurrentLoad(): number {
+        return rateLimitStore.size;
+    },
 
-  /**
-   * Increment hits for a key
-   * @param {string} key - The rate limit key
-   * @returns {Promise<ClientRateLimitInfo>}
-   */
-  async increment(key: string) {
-    const timer = rateLimitMetrics.duration.startTimer({ operation: 'increment' });
-    try {
-      const sanitizedKey = sanitizeKey(key);
-      const now = new Date();
-      const resetTime = new Date(now.getTime() + Config.RATE_LIMIT_WINDOW_MS);
-      const data = rateLimitStore.get(sanitizedKey) || { hits: 0, resetTime };
-      
-      const newData = {
-        hits: data.hits + 1,
-        resetTime: data.resetTime
-      };
-      
-      rateLimitStore.set(sanitizedKey, newData);
-      rateLimitMetrics.hits.inc({ limiter_type: 'default' });
-      
-      return {
-        totalHits: newData.hits,
-        resetTime: newData.resetTime
-      };
-    } catch (error) {
-      console.error('Rate limit store increment error:', error);
-      throw error;
-    } finally {
-      timer();
-    }
-  },
+    /**
+     * Get rate limit info for a key
+     * @param {string} key - The rate limit key
+     * @returns {Promise<ClientRateLimitInfo | undefined>}
+     */
+    async get(key: string) {
+        const timer = rateLimitMetrics.duration.startTimer({ operation: 'get' });
+        try {
+            const data = rateLimitStore.get(sanitizeKey(key));
+            if (!data) return undefined;
+            return {
+                totalHits: data.hits,
+                resetTime: data.resetTime
+            };
+        } catch (error) {
+            console.error('Rate limit store get error:', error);
+            return undefined;
+        } finally {
+            timer();
+        }
+    },
 
-  /**
-   * Decrement hits for a key
-   * @param {string} key - The rate limit key
-   */
-  async decrement(key: string): Promise<void> {
-    const timer = rateLimitMetrics.duration.startTimer({ operation: 'decrement' });
-    try {
-      const sanitizedKey = sanitizeKey(key);
-      const data = rateLimitStore.get(sanitizedKey);
-      if (data && data.hits > 0) {
-        rateLimitStore.set(sanitizedKey, {
-          ...data,
-          hits: data.hits - 1
-        });
-      }
-    } catch (error) {
-      console.error('Rate limit store decrement error:', error);
-    } finally {
-      timer();
-    }
-  },
+    /**
+     * Increment hits for a key
+     * @param {string} key - The rate limit key
+     * @returns {Promise<ClientRateLimitInfo>}
+     */
+    async increment(key: string) {
+        const timer = rateLimitMetrics.duration.startTimer({ operation: 'increment' });
+        try {
+            const sanitizedKey = sanitizeKey(key);
+            const now = new Date();
+            const resetTime = new Date(now.getTime() + Config.RATE_LIMIT_WINDOW_MS);
+            const data = rateLimitStore.get(sanitizedKey) || { hits: 0, resetTime };
+            
+            const newData = {
+                hits: data.hits + 1,
+                resetTime: data.resetTime
+            };
+            
+            rateLimitStore.set(sanitizedKey, newData);
+            rateLimitMetrics.hits.inc({ limiter_type: 'default' });
+            
+            return {
+                totalHits: newData.hits,
+                resetTime: newData.resetTime
+            };
+        } catch (error) {
+            console.error('Rate limit store increment error:', error);
+            throw error;
+        } finally {
+            timer();
+        }
+    },
 
-  /**
-   * Reset rate limit for a key
-   * @param {string} key - The rate limit key
-   */
-  async resetKey(key: string): Promise<void> {
-    const timer = rateLimitMetrics.duration.startTimer({ operation: 'reset' });
-    try {
-      rateLimitStore.delete(sanitizeKey(key));
-    } catch (error) {
-      console.error('Rate limit store reset error:', error);
-    } finally {
-      timer();
-    }
-  },
+    /**
+     * Decrement hits for a key
+     * @param {string} key - The rate limit key
+     */
+    async decrement(key: string): Promise<void> {
+        const timer = rateLimitMetrics.duration.startTimer({ operation: 'decrement' });
+        try {
+            const sanitizedKey = sanitizeKey(key);
+            const data = rateLimitStore.get(sanitizedKey);
+            if (data && data.hits > 0) {
+                rateLimitStore.set(sanitizedKey, {
+                    ...data,
+                    hits: data.hits - 1
+                });
+            }
+        } catch (error) {
+            console.error('Rate limit store decrement error:', error);
+        } finally {
+            timer();
+        }
+    },
 
-  async consume(key: string): Promise<void> {
-    const timer = rateLimitMetrics.duration.startTimer({ operation: 'consume' });
-    try {
-      const result = await this.increment(key);
-      if (result.totalHits > Config.SENSITIVE_RATE_LIMIT_MAX) {
-        rateLimitMetrics.exceeded.inc({ limiter_type: 'consume' });
-        throw new Error('RateLimitExceeded');
-      }
-    } catch (error) {
-      console.error('Rate limit consume error:', error);
-      throw error;
-    } finally {
-      timer();
+    /**
+     * Reset rate limit for a key
+     * @param {string} key - The rate limit key
+     */
+    async resetKey(key: string): Promise<void> {
+        const timer = rateLimitMetrics.duration.startTimer({ operation: 'reset' });
+        try {
+            rateLimitStore.delete(sanitizeKey(key));
+        } catch (error) {
+            console.error('Rate limit store reset error:', error);
+        } finally {
+            timer();
+        }
+    },
+
+    async consume(key: string): Promise<void> {
+        const timer = rateLimitMetrics.duration.startTimer({ operation: 'consume' });
+        try {
+            const result = await this.increment(key);
+            if (result.totalHits > Config.SENSITIVE_RATE_LIMIT_MAX) {
+                rateLimitMetrics.exceeded.inc({ limiter_type: 'consume' });
+                throw new Error('RateLimitExceeded');
+            }
+        } catch (error) {
+            console.error('Rate limit consume error:', error);
+            throw error;
+        } finally {
+            timer();
+        }
+    },
+
+    /**
+     * Reset the rate limiter store
+     */
+    async reset(): Promise<void> {
+        try {
+            rateLimitStore.clear();
+            rateLimitMetrics.hits.reset();
+            rateLimitMetrics.exceeded.reset();
+            rateLimitMetrics.duration.reset();
+        } catch (error) {
+            console.error('Rate limit reset error:', error);
+            throw error;
+        }
     }
-  }
 };
 
 export const sensitiveOpsLimiter = rateLimit({

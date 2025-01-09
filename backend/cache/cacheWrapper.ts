@@ -1,7 +1,7 @@
 import { Redis, RedisOptions, Cluster } from 'ioredis';
 import redisClient from './redis';
 import redisCluster from './redisCluster';
-import { createMetricsCollector, MetricsCollector } from '../cache/metrics';
+import { createMetricsCollector, } from '../cache/metrics';
 
 // First, define the service type
 export type CacheServiceName = 'trademark' | 'payment' | 'copyright' | 'recommendation';
@@ -25,6 +25,15 @@ export class CacheError extends Error {
     this.name = 'CacheError';
     Error.captureStackTrace(this, this.constructor);
   }
+}
+
+// Update the operation type definition
+type CacheOperation = 'get' | 'set' | 'del' | 'ping' | 'clear' | 'reset';
+
+// Update the metrics collector interface
+interface MetricsCollector {
+    observeLatency(operation: CacheOperation, duration: number): void;
+    recordOperation(operation: CacheOperation, status: 'success' | 'error'): void;
 }
 
 /**
@@ -164,6 +173,69 @@ class CacheWrapper {
     const pipeline = this.client.pipeline();
     operations.forEach(op => op());
     await pipeline.exec();
+  }
+
+  /**
+   * Clears all keys for a specific service
+   */
+  async clear(options?: CacheOptions): Promise<void> {
+    const client = options?.useCluster ? redisCluster : this.client;
+    const startTime = Date.now();
+    const service = options?.service;
+    
+    try {
+      if (service) {
+        const keys = await this.withRetry(() => 
+          client.keys(`${service}:*`), options
+        );
+        if (keys.length > 0) {
+          await this.withRetry(() => 
+            client.del(...keys), options
+          );
+        }
+      }
+      
+      this.metrics.observeLatency('clear', Date.now() - startTime);
+      this.metrics.recordOperation('clear', 'success');
+    } catch (error) {
+      this.metrics.recordOperation('clear', 'error');
+      throw new CacheError(
+        error instanceof Error ? error.message : 'Unknown cache error',
+        'clear',
+        'CACHE_ERROR',
+        { service }
+      );
+    }
+  }
+
+  /**
+   * Resets the entire cache or service-specific cache
+   */
+  async reset(options?: CacheOptions): Promise<void> {
+    const client = options?.useCluster ? redisCluster : this.client;
+    const startTime = Date.now();
+    const service = options?.service;
+    
+    try {
+      if (service) {
+        await this.clear(options);
+      } else {
+        await this.withRetry(() => 
+          client.flushall(), options
+        );
+      }
+      
+      this.metrics.observeLatency('reset', Date.now() - startTime);
+      this.metrics.recordOperation('reset', 'success');
+    } catch (error) {
+      this.metrics.recordOperation('reset', 'error');
+      throw new CacheError(
+        error instanceof Error ? error.message : 'Unknown cache error',
+        'reset',
+        'CACHE_ERROR',
+        { service }
+      );
+    }
   }
 }
 
