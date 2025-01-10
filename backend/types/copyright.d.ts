@@ -151,7 +151,7 @@ export interface ICopyrightService {
     searchCopyright(
         query: string,
         params?: Partial<SoftwareSearchParams>
-    ): Promise<ApiResponse<SoftwareSearchResult>>;
+    ): Promise<ApiResponse<SoftwareCopyright[]>>;
 
     getRepositoryDetails(
         owner: string,

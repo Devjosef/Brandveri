@@ -1,5 +1,5 @@
 import { inject, injectable } from 'inversify';
-import { scrypt } from 'crypto'
+import  crypto  from 'crypto'
 import { GitHubUtility } from '../utils/githubUtility';
 import { CopyrightTransformer } from '../utils/copyrightTransformer';
 import { CopyrightValidator } from '../utils/copyrightValidator';
@@ -19,7 +19,6 @@ import type {
     ICopyrightService,
     GitHubRepository
 } from '../../../types/copyright';
-import { z } from 'zod';
 
 
 const logger = loggers.copyright;
@@ -67,7 +66,9 @@ export class CopyrightService implements ICopyrightService {
         this.validateDependencies();
         this.circuitBreaker = new CircuitBreaker('copyright-service', {
             failureThreshold: config.GITHUB.RETRY_ATTEMPTS,
-            resetTimeout: config.GITHUB.RETRY_DELAY
+            resetTimeout: config.GITHUB.RETRY_DELAY,
+            maxConcurrent: 100,
+            healthCheckInterval: 30000
         });
         this.rateLimiter = customStore;
         this.setupGracefulShutdown();
@@ -111,7 +112,7 @@ export class CopyrightService implements ICopyrightService {
     async searchCopyright(
         query: string,
         params?: Partial<SoftwareSearchParams>
-    ): Promise<ApiResponse<SoftwareSearchResult>> {
+    ): Promise<ApiResponse<SoftwareSearchResult[]>> {
         const timer = this.metrics.duration.startTimer({ operation: 'search' });
         this.metrics.concurrent.inc();
         const requestId = crypto.randomUUID();
@@ -124,7 +125,7 @@ export class CopyrightService implements ICopyrightService {
             const cacheKey = this.buildCacheKey('search', validated);
             
             // Fast path: cache hit
-            const cached = await this.getFromCache<SoftwareSearchResult>(cacheKey);
+            const cached = await this.getFromCache<SoftwareSearchResult[]>(cacheKey);
             if (cached) {
                 this.metrics.operations.inc({ 
                     operation: 'search', 
@@ -147,7 +148,7 @@ export class CopyrightService implements ICopyrightService {
                 status: 'success',
                 cache: 'miss'
             });
-            return this.transformer.createApiResponse(results, requestId,);
+            return this.transformer.createApiResponse(results, requestId);
 
         } catch (error) {
             this.handleOperationError('search', error, { query, params });
@@ -224,7 +225,8 @@ export class CopyrightService implements ICopyrightService {
                 const isHealthy = githubHealth.status === 'healthy' && 
                                 cacheHealth.status === 'healthy' &&
                                 !this.isShuttingDown &&
-                                !this.circuitBreaker.isOpen();
+                                !this.circuitBreaker.isOpen() &&
+                                (await this.metrics.concurrent.get()).values[0].value < 100;
     
                 return {
                     status: isHealthy ? 'healthy' : 'degraded',
@@ -253,6 +255,8 @@ export class CopyrightService implements ICopyrightService {
         * @returns {CopyrightMetrics} Standardized metrics object
         */
         getMetrics(): CopyrightMetrics {
+            const hitrate = this.calculateCacheHitRate();
+
             return Object.freeze({
                 requests: Object.freeze({
                     total: 0,
@@ -289,7 +293,8 @@ export class CopyrightService implements ICopyrightService {
                     cache: Object.freeze({
                         hits: 0,
                         misses: 0,
-                        size: 0
+                        size: 0,
+                        hitrate
                     })
                 })
             });
@@ -378,11 +383,11 @@ export class CopyrightService implements ICopyrightService {
             );
         }
     
-        private handleOperationError(
+        private async handleOperationError(
             operation: string,
             error: unknown,
             context: Record<string, unknown>
-        ): void {
+        ): Promise<void> {
             this.metrics.errors.inc({ 
                 operation,
                 type: error instanceof CopyrightError ? error.code : 'unknown'
@@ -394,8 +399,21 @@ export class CopyrightService implements ICopyrightService {
                 error,
                 operation,
                 context,
-                circuitBreakerStatus: this.circuitBreaker.isOpen() ? 'open' : 'closed'
+                circuitBreakerStatus: this.circuitBreaker.isOpen() ? 'open' : 'closed',
+                performance: {
+                    concurrent: (await this.metrics.concurrent.get()).values[0].value,
+                    responseTime: Date.now() - (context.startTime as number || 0)
+                },
+                timestamp: new Date().toISOString()
             }, 'Operation failed');
+    
+            if ((await this.metrics.concurrent.get()).values[0].value > 80) {
+                logger.warn('High load detected, applying backpressure');
+                throw new CopyrightError(
+                    CopyrightErrorCode.RATE_LIMIT_EXCEEDED,
+                    'Service is experiencing high load'
+                );
+            }
         }
     
         private setupGracefulShutdown(): void {
@@ -412,8 +430,8 @@ export class CopyrightService implements ICopyrightService {
  */
 private async calculateCacheHitRate(): Promise<number> {
     try {
-        const hitMetrics = await this.metrics.operations.get();  // Remove arguments
-        const totalMetrics = await this.metrics.operations.get(); // Remove arguments
+        const hitMetrics = await this.metrics.operations.get();  
+        const totalMetrics = await this.metrics.operations.get(); 
 
         const hits = hitMetrics.values[0]?.value ?? 0;
         const total = totalMetrics.values[0]?.value ?? 0;

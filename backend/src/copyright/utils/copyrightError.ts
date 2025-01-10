@@ -11,17 +11,18 @@ export enum ErrorCategory {
  * CopyrightErrorCode with corresponding HTTP status codes and categories.
  */
 export enum CopyrightErrorCode {
-    SEARCH_ERROR = 400,          // Bad Request
-    VALIDATION_ERROR = 422,      // Unprocessable Entity
-    RATE_LIMIT_ERROR = 429,      // Too Many Requests
-    NOT_FOUND = 404,             // Not Found
-    GITHUB_API_ERROR = 502,      // Bad Gateway
-    CACHE_ERROR = 503,           // Service Unavailable
-    UNKNOWN_ERROR = 500,         // Internal Server Error
-    INITIALIZATION_ERROR = 500,
+    VALIDATION_ERROR = 'VALIDATION_ERROR',
+    NOT_FOUND = 'NOT_FOUND',
+    RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+    GITHUB_API_ERROR = 'GITHUB_API_ERROR',
+    INITIALIZATION_ERROR = 'INITIALIZATION_ERROR',
     CIRCUIT_BREAKER_ERROR = 'CIRCUIT_BREAKER_ERROR',
     SHUTDOWN_ERROR = 'SHUTDOWN_ERROR',
-    INTERNAL_ERROR = 'INTERNAL_ERROR'
+    INTERNAL_ERROR = 'INTERNAL_ERROR',
+    CACHE_ERROR = 'CACHE_ERROR',
+    DATA_TRANSFORMATION_ERROR = 'DATA_TRANSFORMATION_ERROR',
+    SERVICE_DEGRADED = 'SERVICE_DEGRADED',
+    RESOURCE_EXHAUSTED = 'RESOURCE_EXHAUSTED'
 }
 
 /**

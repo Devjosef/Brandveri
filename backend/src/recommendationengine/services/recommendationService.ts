@@ -1,4 +1,5 @@
-import { CacheError, cacheService } from '../../utils/cache';
+import { recommendationCache } from '../../utils/cache';
+import { CacheError } from '../../../cache/cacheWrapper';
 import { recommendationSchema, getBrandRecommendations, calculateComplexityScore } from '../utils/helperFunctions';
 import { loggers } from '../../../observability/contextLoggers';
 import { RecommendationRequest, RecommendationResponse, Recommendation, UserPreference} from '../../../types/recommendationEngine';
@@ -167,16 +168,15 @@ class RecommendationService {
 
     private async getCachedRecommendations(cacheKey: string): Promise<Recommendation[] | null> {
         try {
-            const cachedData = await cacheService.get<Recommendation[]>(cacheKey, { 
-                service: 'recommendation' 
-            });
+            const cachedData = await recommendationCache.get<Recommendation[]>(cacheKey);
             if (cachedData) {
                 logger.info({ cacheKey }, 'Cache hit');
                 return cachedData;
             }
             logger.info({ cacheKey }, 'Cache miss');
             return null;
-        } catch (error) {
+        } catch (err) {
+            const error = err instanceof Error ? err.message : 'Unknown cache error';
             logger.warn({ cacheKey, error }, 'Cache retrieval failed - possible Redis connection issues');
             throw new CacheError('CACHE_GET_ERROR', 'Failed to retrieve recommendations from cache', error);
         }
@@ -184,12 +184,10 @@ class RecommendationService {
 
     private async cacheRecommendations(cacheKey: string, recommendations: Recommendation[]): Promise<void> {
         try {
-            await cacheService.set(cacheKey, recommendations, { 
-                ttl: 300, 
-                service: 'recommendation' 
-            });
+            await recommendationCache.set(cacheKey, recommendations);
             logger.info({ cacheKey }, 'Cached recommendations successfully');
-        } catch (error) {
+        } catch (err) {
+            const error = err instanceof Error ? err.message : 'Unknown cache error';
             logger.warn({ cacheKey, error }, 'Cache storage failed - possible Redis connection issues');
             throw new CacheError('CACHE_SET_ERROR', 'Failed to store recommendations in cache', error);
         }

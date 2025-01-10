@@ -1,0 +1,152 @@
+openapi: 3.0.0
+
+info:
+  title: Brandveri API
+  version: '1.0.0'
+  description: |
+    ## Overview
+    Enterprise-grade API for trademark and copyright verification services.
+    
+    ## Key Features
+    - Trademark search and validation,
+    - Copyright verification,
+    - Brand recommendation engine,
+    - User preference management.
+    
+    ## Technical Specifications
+    - RESTful architecture,
+    - OAuth2 authentication,
+    - Rate limiting,
+    - Circuit breaker implementation.
+    
+    ## Performance Characteristics
+    - 99.9% uptime SLA,
+    - <100ms average response time,
+    - Automatic scaling,
+    - Global CDN distribution.
+
+  contact:
+    name: API Support
+    url: https://brandveri.com/support
+    email: api-support@brandveri.com
+
+servers:
+  - url: /api/v1
+    description: Production API
+  - url: /api/v1-beta
+    description: Beta Testing Environment
+
+tags:
+  - name: Copyright
+    description: Copyright search and verification operations
+  - name: Trademark
+    description: Trademark search and registration services
+  - name: Recommendations
+    description: AI-powered brand name recommendations
+  - name: User
+    description: User preference and profile management
+  - name: Health
+    description: System health and diagnostics
+
+components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: /auth/oauth/authorize
+          tokenUrl: /auth/oauth/token
+          scopes:
+            read:copyright: Read copyright information
+            write:copyright: Modify copyright information
+            read:trademark: Read trademark information
+            write:trademark: Modify trademark information
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          enum: [VALIDATION_ERROR, RATE_LIMIT_ERROR, AUTH_ERROR, SERVER_ERROR]
+        message:
+          type: string
+        details:
+          type: object
+        requestId:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: System Health Check
+      description: Comprehensive system health status including all subsystems
+      responses:
+        '200':
+          description: System health information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  components:
+                    type: object
+                    properties:
+                      cache:
+                        $ref: '#/components/schemas/HealthStatus'
+                      database:
+                        $ref: '#/components/schemas/HealthStatus'
+                      externalApis:
+                        $ref: '#/components/schemas/HealthStatus'
+
+  /copyright/search:
+    post:
+      tags: [Copyright]
+      summary: Search Copyright Availability
+      description: |
+        Performs comprehensive copyright search across multiple jurisdictions.
+        
+        ### Search Algorithm
+        - Utilizes ML-enhanced pattern matching
+        - Implements fuzzy search with Levenshtein distance
+        - Considers historical copyright records
+        
+        ### Rate Limiting
+        - 100 requests per minute per API key
+        - Burst capacity of 150 requests
+        
+        ### Caching
+        - Results cached for 24 hours
+        - Soft TTL with background refresh
+      security:
+        - OAuth2: [read:copyright]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CopyrightSearchRequest'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CopyrightSearchResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+# Continue with other endpoints...
