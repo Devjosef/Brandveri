@@ -4,12 +4,12 @@ import { Counter } from 'prom-client';
 import { AuthError } from '../../auth/utils/AuthError';
 
 const logger = loggers.system;
-
-enum SwaggerAuthErrorCode {
+enum HttpStatusCode {
     AUTH_REQUIRED = 401,
     INTERNAL_ERROR = 500
 }
 
+// Error codes as strings
 const ErrorCode = {
     AUTH_REQUIRED: 'AUTH_REQUIRED',
     INTERNAL_ERROR: 'INTERNAL_ERROR'
@@ -50,9 +50,9 @@ export class SwaggerAuthMiddleware {
             if (!req.user) {
                 swaggerMetrics.access.inc({ status: 'unauthorized' });
                 throw new AuthError(
-                    ErrorCode.AUTH_REQUIRED,
+                    HttpStatusCode.AUTH_REQUIRED,
                     'Authentication required to access API documentation',
-                    SwaggerAuthErrorCode.AUTH_REQUIRED
+                    ErrorCode.AUTH_REQUIRED
                 );
             }
 
@@ -74,7 +74,7 @@ export class SwaggerAuthMiddleware {
                 });
             }
 
-            return res.status(SwaggerAuthErrorCode.INTERNAL_ERROR).json({
+            return res.status(HttpStatusCode.INTERNAL_ERROR).json({
                 error: ErrorCode.INTERNAL_ERROR,
                 message: 'Internal server error while authenticating documentation access'
             });
