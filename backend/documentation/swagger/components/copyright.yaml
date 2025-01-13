@@ -1,0 +1,130 @@
+# Copyright Service Components. Domain-specific
+
+schemas:
+  CopyrightSearchRequest:
+    type: object
+    required:
+      - query
+    properties:
+      query:
+        type: string
+        description: Search query for copyright check
+        minLength: 2
+        maxLength: 100
+        example: "brandveri"
+      params:
+        type: object
+        properties:
+          jurisdiction:
+            type: string
+            enum: [US, EU, UK, GLOBAL]
+            default: GLOBAL
+          type:
+            type: string
+            enum: [SOFTWARE, BRAND, CONTENT]
+            default: SOFTWARE
+          yearFrom:
+            type: string
+            format: date
+          yearTo:
+            type: string
+            format: date
+
+  CopyrightSearchResult:
+    type: object
+    properties:
+      id:
+        type: string
+        format: uuid
+      title:
+        type: string
+        description: Title of the copyrighted work
+      owner:
+        type: string
+        description: Copyright owner
+      registrationNumber:
+        type: string
+        description: Official registration number
+      registrationDate:
+        type: string
+        format: date
+      type:
+        type: string
+        enum: [SOFTWARE, BRAND, CONTENT]
+      jurisdiction:
+        type: string
+      status:
+        type: string
+        enum: [ACTIVE, EXPIRED, PENDING]
+      score:
+        type: number
+        format: float
+        minimum: 0
+        maximum: 1
+        description: Similarity score with search query
+
+  CopyrightSearchResponse:
+    type: object
+    required:
+      - data
+      - metadata
+    properties:
+      data:
+        type: array
+        items:
+          $ref: '#/components/schemas/CopyrightSearchResult'
+      metadata:
+        allOf:
+          - $ref: '../common.yaml#/components/schemas/Metadata'
+          - type: object
+            properties:
+              totalResults:
+                type: integer
+              searchParams:
+                $ref: '#/components/schemas/CopyrightSearchRequest'
+
+responses:
+  CopyrightSearchSuccess:
+    description: Successful copyright search results
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/CopyrightSearchResponse'
+
+  CopyrightValidationError:
+    description: Invalid copyright search parameters
+    content:
+      application/json:
+        schema:
+          allOf:
+            - $ref: '../common.yaml#/components/schemas/Error'
+            - type: object
+              properties:
+                validationErrors:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                      message:
+                        type: string
+
+parameters:
+  copyrightJurisdictionParam:
+    name: jurisdiction
+    in: query
+    schema:
+      type: string
+      enum: [US, EU, UK, GLOBAL]
+      default: GLOBAL
+    description: Jurisdiction for copyright search
+
+  copyrightTypeParam:
+    name: type
+    in: query
+    schema:
+      type: string
+      enum: [SOFTWARE, BRAND, CONTENT]
+      default: SOFTWARE
+    description: Type of copyright to search for

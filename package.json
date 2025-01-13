@@ -35,7 +35,9 @@
     "sanitize-html": "^2.13.1",
     "sequelize": "^6.37.3",
     "stripe": "^17.2.0",
+    "swagger-ui-express": "^5.0.1",
     "umzug": "^3.8.2",
+    "yaml": "^2.7.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -48,6 +50,7 @@
     "@types/opossum": "^8.1.8",
     "@types/pg": "^8.11.10",
     "@types/sanitize-html": "^2.13.0",
+    "@types/swagger-ui-express": "^4.1.7",
     "@types/uuid": "^10.0.0",
     "sequelize-cli": "^6.6.2"
   }

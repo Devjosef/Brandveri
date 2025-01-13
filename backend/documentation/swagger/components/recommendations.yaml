@@ -1,0 +1,179 @@
+# Recommendation Engine Components
+
+schemas:
+  RecommendationRequest:
+    type: object
+    required:
+      - industry
+      - preferences
+    properties:
+      industry:
+        type: string
+        description: Target industry for brand recommendations
+        example: "technology"
+      preferences:
+        type: object
+        properties:
+          style:
+            type: string
+            enum: [MODERN, CLASSIC, PLAYFUL, PROFESSIONAL]
+            description: Preferred brand style
+          length:
+            type: integer
+            minimum: 3
+            maximum: 20
+            description: Preferred name length
+          keywords:
+            type: array
+            items:
+              type: string
+            description: Relevant keywords for brand
+          excludeWords:
+            type: array
+            items:
+              type: string
+            description: Words to avoid
+      constraints:
+        type: object
+        properties:
+          mustInclude:
+            type: array
+            items:
+              type: string
+            description: Characters or patterns to include
+          availability:
+            type: object
+            properties:
+              checkDomain:
+                type: boolean
+                default: true
+              checkTrademark:
+                type: boolean
+                default: true
+              checkSocial:
+                type: boolean
+                default: true
+
+  RecommendationResult:
+    type: object
+    properties:
+      id:
+        type: string
+        format: uuid
+      name:
+        type: string
+        description: Generated brand name
+      score:
+        type: number
+        format: float
+        minimum: 0
+        maximum: 1
+        description: Confidence score
+      availability:
+        type: object
+        properties:
+          domain:
+            type: boolean
+          trademark:
+            type: boolean
+          social:
+            type: object
+            properties:
+              twitter:
+                type: boolean
+              instagram:
+                type: boolean
+              facebook:
+                type: boolean
+      analysis:
+        type: object
+        properties:
+          uniqueness:
+            type: number
+            format: float
+          memorability:
+            type: number
+            format: float
+          pronunciation:
+            type: number
+            format: float
+      alternatives:
+        type: array
+        items:
+          type: string
+        description: Similar variations of the name
+
+  RecommendationResponse:
+    type: object
+    required:
+      - recommendations
+      - metadata
+    properties:
+      recommendations:
+        type: array
+        items:
+          $ref: '#/schemas/RecommendationResult'
+      metadata:
+        allOf:
+          - $ref: '../common.yaml#/components/schemas/Metadata'
+          - type: object
+            properties:
+              totalGenerated:
+                type: integer
+              filterCriteria:
+                $ref: '#/schemas/RecommendationRequest'
+
+responses:
+  RecommendationSuccess:
+    description: Successfully generated recommendations
+    content:
+      application/json:
+        schema:
+          $ref: '#/schemas/RecommendationResponse'
+
+  RecommendationError:
+    description: Error generating recommendations
+    content:
+      application/json:
+        schema:
+          allOf:
+            - $ref: '../common.yaml#/components/schemas/Error'
+            - type: object
+              properties:
+                engineError:
+                  type: object
+                  properties:
+                    code:
+                      type: string
+                      enum: [
+                        NO_RESULTS,
+                        INVALID_INDUSTRY,
+                        CONSTRAINT_CONFLICT,
+                        ENGINE_OVERLOAD
+                      ]
+                    suggestion:
+                      type: string
+
+parameters:
+  industryParam:
+    name: industry
+    in: query
+    schema:
+      type: string
+    description: Industry filter for recommendations
+
+  styleParam:
+    name: style
+    in: query
+    schema:
+      type: string
+      enum: [MODERN, CLASSIC, PLAYFUL, PROFESSIONAL]
+    description: Style preference for brand names
+
+  availabilityParam:
+    name: checkAvailability
+    in: query
+    schema:
+      type: boolean
+      default: true
+    description: Whether to check name availability

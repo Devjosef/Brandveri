@@ -1,97 +1,371 @@
+# Main Specification.
 openapi: 3.0.0
 
 info:
   title: Brandveri API
   version: '1.0.0'
   description: |
-    ## Overview
-    Enterprise-grade API for trademark and copyright verification services.
+    API for trademark and copyright verification services.
     
-    ## Key Features
-    - Trademark search and validation,
-    - Copyright verification,
-    - Brand recommendation engine,
-    - User preference management.
+    ## Features
+    - Trademark search and validation
+    - Copyright verification
+    - Brand recommendations
+    - User preferences management
     
-    ## Technical Specifications
-    - RESTful architecture,
-    - OAuth2 authentication,
-    - Rate limiting,
-    - Circuit breaker implementation.
+     ## Rate Limiting Policies
     
-    ## Performance Characteristics
-    - 99.9% uptime SLA,
-    - <100ms average response time,
-    - Automatic scaling,
-    - Global CDN distribution.
+    ### Tier-Based Quotas
+    - Free: 100 requests/minute
+    - Basic: 300 requests/minute
+    - Premium: 1000 requests/minute
+    - Enterprise: Custom limits
+    
+    ### Burst Handling
+    - Burst Size: 50% of base quota
+    - Burst Duration: 30 seconds
+    - Recovery Rate: 10 tokens/second
+    
+    ### Recovery Mechanisms
+    1. Exponential Backoff
+       - Initial wait: 1s
+       - Max wait: 32s
+       - Jitter: ±100ms
 
-  contact:
-    name: API Support
-    url: https://brandveri.com/support
-    email: api-support@brandveri.com
+     2. Circuit Breaker
+       - Open: >50% error rate
+       - Half-open: After 30s cooling
+       - Closed: <10% error rate
+    
+    ## Error Handling Framework
+    
+    ### Error Hierarchy
+    1. Client Errors (4xx)
+       - Validation (400)
+       - Authentication (401)
+       - Authorization (403)
+       - Rate Limiting (429)
+    
+    2. Server Errors (5xx)
+       - Service Unavailable (503)
+       - Gateway Timeout (504)
+       - Integration Error (502)
+    
+    ### Error Correlation
+    All errors include:
+    - Correlation ID
+    - Timestamp
+    - Service Context
+    - Stack Position
+
+    ### Recovery Suggestions
+    - Automatic retry eligibility
+    - Alternative endpoints
+    - Fallback options
+    
+    ## Service Level Objectives (SLO)
+    
+    ### Availability
+    - API Gateway: 99.99%
+    - Core Services: 99.9%
+    - Integration Services: 99.5%
+    
+    ### Latency Targets
+    - P95: < 300ms
+    - P99: < 1000ms
+    - Long-running operations: Async with webhooks
+    
+    ### Error Budgets
+    - 0.1% error rate allowance
+    - 1% degraded performance allowance
+
+    ## API Versioning Strategy
+    
+    ### Version Lifecycle
+    1. Development (alpha)
+       - Unstable
+       - Breaking changes allowed
+    
+    2. Beta
+       - Feature complete
+       - Breaking changes with notice
+    
+    3. Stable
+       - Semantic versioning
+       - Backwards compatible
+    
+    ### Deprecation Policy
+    - 6 months notice for major versions
+    - 3 months notice for minor features
+    - Sunset dates in response headers
+    
+    ## Authentication
+    Uses JWT Bearer token authentication.
 
 servers:
   - url: /api/v1
     description: Production API
   - url: /api/v1-beta
-    description: Beta Testing Environment
+    description: Beta testing API
 
 tags:
-  - name: Copyright
-    description: Copyright search and verification operations
   - name: Trademark
-    description: Trademark search and registration services
-  - name: Recommendations
-    description: AI-powered brand name recommendations
+    description: Trademark search and validation operations
+  - name: Copyright
+    description: Copyright verification operations
   - name: User
-    description: User preference and profile management
-  - name: Health
-    description: System health and diagnostics
-
-components:
-  securitySchemes:
-    OAuth2:
-      type: oauth2
-      flows:
-        authorizationCode:
-          authorizationUrl: /auth/oauth/authorize
-          tokenUrl: /auth/oauth/token
-          scopes:
-            read:copyright: Read copyright information
-            write:copyright: Modify copyright information
-            read:trademark: Read trademark information
-            write:trademark: Modify trademark information
-
-  schemas:
-    Error:
-      type: object
-      required:
-        - code
-        - message
-      properties:
-        code:
-          type: string
-          enum: [VALIDATION_ERROR, RATE_LIMIT_ERROR, AUTH_ERROR, SERVER_ERROR]
-        message:
-          type: string
-        details:
-          type: object
-        requestId:
-          type: string
-          format: uuid
-        timestamp:
-          type: string
-          format: date-time
+    description: User profile and preferences
+  - name: Recommendations
+    description: Brand name recommendations
 
 paths:
-  /health:
-    get:
-      tags: [Health]
-      summary: System Health Check
-      description: Comprehensive system health status including all subsystems
+  /trademark/search:
+    post:
+      tags: [Trademark]
+      summary: Search for existing trademarks
+      description: |
+        Performs comprehensive trademark search across multiple jurisdictions.
+        
+        ### Search Algorithm
+        - Fuzzy matching with configurable threshold
+        - Phonetic similarity checks
+        - Visual similarity for logos
+        
+        ### Results
+        - Ranked by relevance
+        - Grouped by jurisdiction
+        - Filtered by status
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './components/trademark.yaml#/parameters/trademarkJurisdictionParam'
+        - $ref: './components/trademark.yaml#/parameters/trademarkTypeParam'
+        - $ref: './components/trademark.yaml#/parameters/trademarkClassParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/trademark.yaml#/schemas/TrademarkSearchRequest'
       responses:
         '200':
-          description: System health information
+          $ref: './components/trademark.yaml#/responses/TrademarkSearchSuccess'
+        '400':
+          $ref: './components/trademark.yaml#/responses/TrademarkValidationError'
+        '401':
+          $ref: './components/common.yaml#/responses/Unauthorized'
+        '429':
+          $ref: './components/common.yaml#/responses/TooManyRequests'
+
+  /copyright/search:
+    post:
+      tags: [Copyright]
+      summary: Search for copyright records
+      description: |
+        Searches for existing copyright records across jurisdictions.
+        
+        ### Search Coverage
+        - Software repositories
+        - Brand names and logos
+        - Content databases
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: './components/copyright.yaml#/parameters/copyrightJurisdictionParam'
+        - $ref: './components/copyright.yaml#/parameters/copyrightTypeParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/copyright.yaml#/schemas/CopyrightSearchRequest'
+      responses:
+        '200':
+          $ref: './components/copyright.yaml#/responses/CopyrightSearchSuccess'
+        '400':
+          $ref: './components/copyright.yaml#/responses/CopyrightValidationError'
+        '401':
+          $ref: './components/common.yaml#/responses/Unauthorized'
+        '429':
+          $ref: './components/common.yaml#/responses/TooManyRequests'
+
+  /user/preferences:
+    get:
+      tags: [User]
+      summary: Get user preferences
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User preferences retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: object
+                    properties:
+                      email:
+                        type: boolean
+                      push:
+                        type: boolean
+                  defaultJurisdiction:
+                    type: string
+                    enum: [US, EU, UK, GLOBAL]
+                  searchHistory:
+                    type: boolean
+    put:
+      tags: [User]
+      summary: Update user preferences
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notifications:
+                  type: object
+                  properties:
+                    email:
+                      type: boolean
+                    push:
+                      type: boolean
+                defaultJurisdiction:
+                  type: string
+                  enum: [US, EU, UK, GLOBAL]
+                searchHistory:
+                  type: boolean
+
+  /recommendations/generate:
+    post:
+      tags: [Recommendations]
+      summary: Generate brand name recommendations
+      description: |
+        Generates AI-powered brand name recommendations based on input parameters.
+        
+        ### Features
+        - Industry-specific suggestions
+        - Trademark availability check
+        - Domain availability check
+        - Social media handle check
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - industry
+              properties:
+                industry:
+                  type: string
+                  description: Target industry
+                keywords:
+                  type: array
+                  items:
+                    type: string
+                style:
+                  type: string
+                  enum: [MODERN, CLASSIC, PLAYFUL, PROFESSIONAL]
+                maxLength:
+                  type: integer
+                  minimum: 3
+                  maximum: 20
+      responses:
+        '200':
+          description: Recommendations generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        score:
+                          type: number
+                        availability:
+                          type: object
+                          properties:
+                            trademark:
+                              type: boolean
+                            domain:
+                              type: boolean
+                            social:
+                              type: boolean
+
+  /payments:
+    post:
+      tags: [Payments]
+      summary: Process payment for premium features
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount
+                - currency
+                - paymentMethod
+              properties:
+                amount:
+                  type: number
+                paymentMethod:
+                  type: string
+                  enum: [STRIPE, PAYPAL]
+                currency:
+                  type: string
+                  enum: [USD, EUR, GBP]
+
+  /recommendations/engine:
+    post:
+      tags: [RecommendationEngine]
+      summary: Get AI-powered brand suggestions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - industry
+                - preferences
+              properties:
+                industry:
+                  type: string
+                preferences:
+                  type: object
+                  properties:
+                    style:
+                      type: string
+                      enum: [MODERN, CLASSIC, PLAYFUL]
+                    length:
+                      type: integer
+                      minimum: 3
+                      maximum: 20
+
+  /gateway/health:
+    get:
+      tags: [Gateway]
+      summary: API Gateway health status
+      responses:
+        '200':
+          description: Gateway status information
           content:
             application/json:
               schema:
@@ -99,54 +373,23 @@ paths:
                 properties:
                   status:
                     type: string
-                    enum: [healthy, degraded, unhealthy]
-                  components:
+                    enum: [HEALTHY, DEGRADED, DOWN]
+                  services:
                     type: object
                     properties:
-                      cache:
-                        $ref: '#/components/schemas/HealthStatus'
-                      database:
-                        $ref: '#/components/schemas/HealthStatus'
-                      externalApis:
-                        $ref: '#/components/schemas/HealthStatus'
+                      trademark:
+                        type: string
+                        enum: [UP, DOWN]
+                      copyright:
+                        type: string
+                        enum: [UP, DOWN]
+                      recommendations:
+                        type: string
+                        enum: [UP, DOWN]
 
-  /copyright/search:
-    post:
-      tags: [Copyright]
-      summary: Search Copyright Availability
-      description: |
-        Performs comprehensive copyright search across multiple jurisdictions.
-        
-        ### Search Algorithm
-        - Utilizes ML-enhanced pattern matching
-        - Implements fuzzy search with Levenshtein distance
-        - Considers historical copyright records
-        
-        ### Rate Limiting
-        - 100 requests per minute per API key
-        - Burst capacity of 150 requests
-        
-        ### Caching
-        - Results cached for 24 hours
-        - Soft TTL with background refresh
-      security:
-        - OAuth2: [read:copyright]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CopyrightSearchRequest'
-      responses:
-        '200':
-          description: Search results
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CopyrightSearchResponse'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-# Continue with other endpoints...
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

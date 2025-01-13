@@ -1,0 +1,244 @@
+# API Gateway Components
+
+schemas:
+  # Rate Limit Schema
+  RateLimit:
+    type: object
+    required:
+      - limit
+      - remaining
+      - reset
+      - type
+    properties:
+      limit:
+        type: integer
+        description: Maximum requests per window
+        example: 100
+      remaining:
+        type: integer
+        description: Remaining requests in current window
+        example: 95
+      reset:
+        type: string
+        format: date-time
+        description: When the rate limit resets
+      type:
+        type: string
+        enum: [IP, USER, API_KEY]
+      window:
+        type: integer
+        description: Time window in seconds
+        example: 3600
+      tier:
+        type: string
+        enum: [FREE, BASIC, PREMIUM, ENTERPRISE]
+        description: User tier affecting rate limits
+      retryAfter:
+        type: integer
+        description: Seconds to wait when limit exceeded
+      quotaPolicy:
+        type: object
+        properties:
+          burstSize:
+            type: integer
+            description: Maximum burst size allowed
+          replenishRate:
+            type: integer
+            description: Tokens replenished per second
+
+  # Health Check Schema
+  GatewayHealth:
+    type: object
+    required:
+      - status
+      - services
+      - metadata
+    properties:
+      status:
+        type: string
+        enum: [HEALTHY, DEGRADED, DOWN]
+        description: Overall gateway health status
+      services:
+        type: object
+        properties:
+          trademark:
+            $ref: '#/schemas/ServiceHealth'
+          copyright:
+            $ref: '#/schemas/ServiceHealth'
+          recommendations:
+            $ref: '#/schemas/ServiceHealth'
+          payments:
+            $ref: '#/schemas/ServiceHealth'
+      metrics:
+        type: object
+        properties:
+          requestRate:
+            type: number
+            description: Requests per second
+          errorRate:
+            type: number
+            description: Percentage of 5xx responses
+          p95Latency:
+            type: number
+            description: 95th percentile latency in ms
+          p99Latency:
+            type: number
+            description: 99th percentile latency in ms
+          circuitBreakers:
+            type: object
+            properties:
+              open:
+                type: integer
+                description: Number of open circuit breakers
+              halfOpen:
+                type: integer
+                description: Number of half-open circuit breakers
+      metadata:
+        allOf:
+          - $ref: '../common.yaml#/components/schemas/Metadata'
+          - type: object
+            properties:
+              version:
+                type: string
+              environment:
+                type: string
+              region:
+                type: string
+              uptime:
+                type: number
+                description: Gateway uptime in seconds
+              lastDeployment:
+                type: string
+                format: date-time
+              nodeCount:
+                type: integer
+                description: Number of gateway nodes
+
+  # New Service Health Schema
+  ServiceHealth:
+    type: object
+    properties:
+      status:
+        type: string
+        enum: [UP, DOWN, DEGRADED]
+      latency:
+        type: number
+        description: Average response time in ms
+      errorRate:
+        type: number
+        description: Error rate percentage
+      circuitBreaker:
+        type: object
+        properties:
+          status:
+            type: string
+            enum: [CLOSED, OPEN, HALF_OPEN]
+          failureRate:
+            type: number
+          lastFailure:
+            type: string
+            format: date-time
+      loadBalancer:
+        type: object
+        properties:
+          activeNodes:
+            type: integer
+          totalNodes:
+            type: integer
+          algorithm:
+            type: string
+            enum: [ROUND_ROBIN, LEAST_CONN, IP_HASH]
+      cache:
+        type: object
+        properties:
+          hitRate:
+            type: number
+          size:
+            type: integer
+          ttl:
+            type: integer
+
+responses:
+  GatewayHealthResponse:
+    description: Gateway health check response
+    content:
+      application/json:
+        schema:
+          $ref: '#/schemas/GatewayHealth'
+
+  GatewayError:
+    description: Gateway-level error
+    content:
+      application/json:
+        schema:
+          allOf:
+            - $ref: '../common.yaml#/components/schemas/Error'
+            - type: object
+              properties:
+                gatewayError:
+                  type: object
+                  properties:
+                    code:
+                      type: string
+                      enum: [
+                        SERVICE_UNAVAILABLE,
+                        RATE_LIMITED,
+                        CIRCUIT_OPEN,
+                        INVALID_ROUTE,
+                        TIMEOUT
+                      ]
+                    service:
+                      type: string
+                    retryAfter:
+                      type: integer
+                      description: Retry delay in seconds
+
+parameters:
+  serviceParam:
+    name: service
+    in: query
+    schema:
+      type: string
+      enum: [trademark, copyright, recommendations, payments]
+    description: Specific service to check
+
+  detailedParam:
+    name: detailed
+    in: query
+    schema:
+      type: boolean
+      default: false
+    description: Include detailed metrics in response
+
+headers:
+  X-RateLimit:
+    description: Rate limit details
+    required: true
+    schema:
+      $ref: '#/schemas/RateLimit'
+  X-RateLimit-Policy:
+    description: Rate limit policy details
+    schema:
+      type: object
+      properties:
+        tier:
+          type: string
+        window:
+          type: integer
+        burst:
+          type: integer
+  X-Health-Check:
+    description: Service health information
+    schema:
+      type: object
+      properties:
+        status:
+          type: string
+        node:
+          type: string
+        region:
+          type: string
+  X-Gateway-Version:
+    description: Gateway version
+    schema:
+      type: string

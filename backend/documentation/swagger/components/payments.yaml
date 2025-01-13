@@ -1,0 +1,130 @@
+# Payment Service Components
+
+schemas:
+  PaymentRequest:
+    type: object
+    required:
+      - amount
+      - currency
+      - paymentMethod
+    properties:
+      amount:
+        type: number
+        minimum: 0.01
+        description: Payment amount
+        example: 29.99
+      currency:
+        type: string
+        enum: [USD, EUR, GBP]
+        description: Payment currency
+        example: "USD"
+      paymentMethod:
+        type: string
+        enum: [STRIPE, PAYPAL]
+        description: Payment processor
+        example: "STRIPE"
+      metadata:
+        type: object
+        properties:
+          planId:
+            type: string
+            description: Subscription plan identifier
+          customerId:
+            type: string
+            description: External payment provider customer ID
+          description:
+            type: string
+            description: Payment description
+
+  PaymentResponse:
+    type: object
+    required:
+      - id
+      - status
+      - metadata
+    properties:
+      id:
+        type: string
+        format: uuid
+        description: Internal payment identifier
+      externalId:
+        type: string
+        description: Payment provider transaction ID
+      status:
+        type: string
+        enum: [PENDING, COMPLETED, FAILED, REFUNDED]
+        description: Payment status
+      amount:
+        type: number
+      currency:
+        type: string
+      paymentMethod:
+        type: string
+      metadata:
+        $ref: '../common.yaml#/components/schemas/Metadata'
+      createdAt:
+        type: string
+        format: date-time
+      updatedAt:
+        type: string
+        format: date-time
+
+responses:
+  PaymentSuccess:
+    description: Payment processed successfully
+    content:
+      application/json:
+        schema:
+          $ref: '#/schemas/PaymentResponse'
+
+  PaymentError:
+    description: Payment processing failed
+    content:
+      application/json:
+        schema:
+          allOf:
+            - $ref: '../common.yaml#/components/schemas/Error'
+            - type: object
+              properties:
+                paymentError:
+                  type: object
+                  properties:
+                    code:
+                      type: string
+                      enum: [
+                        INSUFFICIENT_FUNDS,
+                        CARD_DECLINED,
+                        INVALID_CARD,
+                        EXPIRED_CARD,
+                        PROCESSING_ERROR
+                      ]
+                    providerMessage:
+                      type: string
+                    recommendedAction:
+                      type: string
+
+parameters:
+  paymentIdParam:
+    name: paymentId
+    in: path
+    required: true
+    schema:
+      type: string
+      format: uuid
+    description: Payment transaction identifier
+
+  paymentMethodParam:
+    name: method
+    in: query
+    schema:
+      type: string
+      enum: [STRIPE, PAYPAL]
+    description: Payment method filter
+
+  paymentStatusParam:
+    name: status
+    in: query
+    schema:
+      type: string
+      enum: [PENDING, COMPLETED, FAILED, REFUNDED]
+    description: Payment status filter

@@ -1,3 +1,4 @@
+// Security layer.
 import { Request, Response, NextFunction } from 'express';
 import { loggers } from '../../observability/contextLoggers';
 import { Counter } from 'prom-client';
@@ -37,9 +38,9 @@ const defaultConfig: SwaggerAuthConfig = {
 export class SwaggerAuthMiddleware {
     constructor(private readonly config: SwaggerAuthConfig = defaultConfig) {}
 
-    public authenticate = async (req: Request, res: Response, next: NextFunction) => {
+    public authenticate = (req: Request, res: Response, next: NextFunction): Response | void => {
         try {
-            // Skip auth for non-production environments if configured
+            // Skip authentication for non-production environments if it is configured.
             if (!this.config.requireAuth && 
                 this.config.allowedEnvironments.includes(process.env.NODE_ENV || 'development')) {
                 logger.debug('Skipping Swagger auth in non-production environment');

@@ -1,0 +1,174 @@
+# Trademark Service Components. Domain-specific
+
+schemas:
+  TrademarkSearchRequest:
+    type: object
+    required:
+      - query
+    properties:
+      query:
+        type: string
+        description: Search query for trademark check
+        minLength: 2
+        maxLength: 100
+        example: "brandveri"
+      params:
+        type: object
+        properties:
+          jurisdiction:
+            type: string
+            enum: [US, EU, UK, GLOBAL]
+            default: GLOBAL
+          type:
+            type: string
+            enum: [WORD_MARK, LOGO, COMBINED]
+            default: WORD_MARK
+          status:
+            type: array
+            items:
+              type: string
+              enum: [ACTIVE, PENDING, EXPIRED]
+          class:
+            type: array
+            items:
+              type: integer
+              minimum: 1
+              maximum: 45
+            description: Nice Classification classes
+
+  TrademarkSearchResult:
+    type: object
+    properties:
+      id:
+        type: string
+        format: uuid
+      mark:
+        type: string
+        description: Trademark text or name
+      owner:
+        type: object
+        properties:
+          name:
+            type: string
+          country:
+            type: string
+          type:
+            type: string
+            enum: [INDIVIDUAL, COMPANY, ORGANIZATION]
+      registrationNumber:
+        type: string
+        description: Official registration number
+      registrationDate:
+        type: string
+        format: date
+      expirationDate:
+        type: string
+        format: date
+      type:
+        type: string
+        enum: [WORD_MARK, LOGO, COMBINED]
+      status:
+        type: string
+        enum: [ACTIVE, PENDING, EXPIRED]
+      classes:
+        type: array
+        items:
+          type: integer
+        description: Nice Classification classes
+      jurisdiction:
+        type: string
+      score:
+        type: number
+        format: float
+        minimum: 0
+        maximum: 1
+        description: Similarity score with search query
+
+  TrademarkSearchResponse:
+    type: object
+    required:
+      - data
+      - metadata
+    properties:
+      data:
+        type: array
+        items:
+          $ref: '#/components/schemas/TrademarkSearchResult'
+      metadata:
+        allOf:
+          - $ref: '../common.yaml#/components/schemas/Metadata'
+          - type: object
+            properties:
+              totalResults:
+                type: integer
+              searchParams:
+                $ref: '#/components/schemas/TrademarkSearchRequest'
+              classifications:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    class:
+                      type: integer
+                    count:
+                      type: integer
+                description: Distribution of results by classification
+
+responses:
+  TrademarkSearchSuccess:
+    description: Successful trademark search results
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/TrademarkSearchResponse'
+
+  TrademarkValidationError:
+    description: Invalid trademark search parameters
+    content:
+      application/json:
+        schema:
+          allOf:
+            - $ref: '../common.yaml#/components/schemas/Error'
+            - type: object
+              properties:
+                validationErrors:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                      message:
+                        type: string
+
+parameters:
+  trademarkJurisdictionParam:
+    name: jurisdiction
+    in: query
+    schema:
+      type: string
+      enum: [US, EU, UK, GLOBAL]
+      default: GLOBAL
+    description: Jurisdiction for trademark search
+
+  trademarkTypeParam:
+    name: type
+    in: query
+    schema:
+      type: string
+      enum: [WORD_MARK, LOGO, COMBINED]
+      default: WORD_MARK
+    description: Type of trademark to search for
+
+  trademarkClassParam:
+    name: class
+    in: query
+    schema:
+      type: array
+      items:
+        type: integer
+        minimum: 1
+        maximum: 45
+    description: Nice Classification classes to filter by
+    style: form
+    explode: false
