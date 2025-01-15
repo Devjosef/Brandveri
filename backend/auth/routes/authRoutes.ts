@@ -3,7 +3,7 @@ import { register, login, refreshToken, logout } from '../controllers/authContro
 import { validateRegistration, validateLogin } from '../../middleware/validator';
 import { authRateLimiter, sensitiveOpsLimiter } from '../../middleware/ratelimiter';
 import { authenticateToken } from '../../middleware/auth';
-
+import { RequestHandler } from 'express';
 
 const router = Router();
 
@@ -11,24 +11,25 @@ const router = Router();
 router.post('/register', 
   sensitiveOpsLimiter,
   validateRegistration, 
-  register
+  register as RequestHandler
 );
 
 router.post('/login', 
   authRateLimiter,
   validateLogin, 
-  login
+  login as RequestHandler
 );
 
 router.post('/refresh-token', 
   authRateLimiter, 
-  refreshToken
+  refreshToken as RequestHandler
 );
 
+// Handle logout with proper typing
 router.post('/logout', 
   authenticateToken,
   authRateLimiter,
-  logout
+  logout as unknown as RequestHandler
 );
 
 export default router;

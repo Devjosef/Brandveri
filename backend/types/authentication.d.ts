@@ -3,29 +3,68 @@ import { ParamsDictionary } from 'express-serve-static-core';
 import { ParsedQs } from 'qs';
 import { Session } from 'express-session';
 
-// Types for authentication
-
-export interface User {
-    id: number; 
+// Principle: Single Responsibility,
+// Each type has one clear purpose.
+export interface TokenPayload {
+    id: number;
     username: string;
-    passwordHash: string; // Store hashed password
+    role: UserRole;
+    tokenVersion: number;
+    exp: number;
+    iat: number;
+    deviceId?: string;
+    permissions?: string[];
+}
+
+// Principle: Simple and Direct,
+// Principle: Type Safety.
+export interface AuthenticatedRequest extends Request {
+    user: TokenPayload;  // Direct mapping, no generics
+    session?: Session;
+}
+
+// Principle: Type Theory Correctness
+// Principle: Production Patterns
+export type AuthenticatedRequestHandler<
+    P = ParamsDictionary,
+    ResBody = any,
+    ReqBody = any,
+    ReqQuery = ParsedQs,
+> = (
+    req: AuthenticatedRequest,  // No generics, clear contract
+    res: Response<ResBody>,
+    next: NextFunction
+) => Promise<void> | void;
+
+// Rest of types remain focused and simple
+export interface User {
+    id: number;
+    username: string;
+    passwordHash: string;
     email: string;
     createdAt: Date;
     updatedAt: Date;
-    lastLogin?: Date;           // Track last login
-    failedLoginAttempts?: number; // Security tracking
-    accountLocked?: boolean;    // Account security status
-    emailVerified: boolean;     // Email verification status
-    role: UserRole;            // User role enum
-    status: UserStatus;        // Account status enum
-    tokenVersion: number;      // For token invalidation
+    lastLogin?: Date;
+    failedLoginAttempts?: number;
+    accountLocked?: boolean;
+    emailVerified: boolean;
+    role: UserRole;
+    status: UserStatus;
+    tokenVersion: number;
+}
+
+// Enums 
+export enum UserRole {
+    ADMIN = 'admin',
+    USER = 'user',
+    MODERATOR = 'moderator'
 }
 
 export interface AuthRequest {
     username: string;
     password: string;
-    deviceId?: string;         // For device tracking
-    clientInfo?: {            // Client information
+    deviceId?: string;         // For device tracking.
+    clientInfo?: {            // Client information.
         userAgent: string;
         ipAddress: string;
         deviceType: string;
@@ -38,36 +77,9 @@ export interface AuthResponse {
     user: User;
 }
 
-export interface TokenPayload {
-    id: number;
-    username: string;
-    role: UserRole;           // Make required
-    tokenVersion: number;     // Make required
-    exp: number;             // Make required
-    iat: number;             // Issued at
-    deviceId?: string;       // Device tracking
-    permissions?: string[];  // Granular permissions
-}
-
-export interface AuthenticatedRequest extends Request {
-    user: TokenPayload;
-    session?: Session;
-}
-
-export type AuthenticatedRequestHandler<
-    P = ParamsDictionary,
-    ResBody = any,
-    ReqBody = any,
-    ReqQuery = ParsedQs,
-> = (
-    req: AuthenticatedRequest,
-    res: Response<ResBody>,
-    next: NextFunction
-) => Promise<void> | void;
-
 export interface RefreshTokenPayload {
     id: number; 
-    exp: number; // Expiration time
+    exp: number; // Expiration time.
 }
 
 export interface TokenResponse {
@@ -83,12 +95,6 @@ export type AuthAction =
     | 'token_revoked'
     | 'invalid_token'
     | 'authentication_failed';
-
-export enum UserRole {
-    ADMIN = 'admin',
-    USER = 'user',
-    MODERATOR = 'moderator'
-}
 
 export enum UserStatus {
     ACTIVE = 'active',

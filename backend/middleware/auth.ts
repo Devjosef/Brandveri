@@ -6,8 +6,10 @@ import { AuthError, AuthErrorTypes } from '../auth/utils/AuthError';
 import { Counter } from 'prom-client';
 import { Config } from './index'
 
-export interface AuthenticatedRequest extends Request {
-  user: TokenPayload;
+export interface AuthenticatedRequest extends Omit<Request, 'user'> {
+  user: TokenPayload & {
+    id: number;
+  };
 }
 
 // Authentication metrics
@@ -65,7 +67,7 @@ export const authenticateToken: RequestHandler<
     }
 
     authMetrics.tokenValidations.inc({ status: 'success' });
-    (req as AuthenticatedRequest).user = user;
+    (req as unknown as AuthenticatedRequest).user = user;
     next();
   } catch (err) {
     if (err instanceof AuthError) {

@@ -1,0 +1,22 @@
+# Use a specific version for stability
+FROM node:18-alpine
+
+# Add common dependencies
+RUN apk add --no-cache \
+    curl \
+    tini \
+    tzdata
+
+# Set working directory
+WORKDIR /app
+
+# Common security configurations
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+# Common environment variables
+ENV NODE_ENV=production \
+    TZ=UTC
+
+# Use tini as entrypoint for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]

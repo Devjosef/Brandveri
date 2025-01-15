@@ -19,6 +19,18 @@ processors:
       - key: service.namespace
         value: ${OTEL_SERVICE_NAMESPACE}
         action: insert
+  resourcedetection:
+    detectors: [env, system, docker]
+    timeout: 2s
+    override: false
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 100
+    expected_new_traces_per_sec: 10
+    policies:
+      - name: error-in-trace
+        type: status_code
+        status_code: ERROR
 
 exporters:
   jaeger:

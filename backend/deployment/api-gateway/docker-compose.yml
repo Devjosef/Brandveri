@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  nginx:
+    image: nginx:latest
+    ports:
+      - "443:443"
+    volumes:
+      - ../../api-gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # SSL certificates
+    depends_on:
+      - trademark-service
+      - copyright-service
+      - recommendation-service
+    networks:
+      - api-network
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+
+  trademark-service:
+    build: 
+      context: ../../services/trademark
+      dockerfile: Dockerfile
+    ports:
+      - "4001:4001"
+      - "4002:4002"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+    networks:
+      - api-network
+
+  copyright-service:
+    build:
+      context: ../../services/copyright
+      dockerfile: Dockerfile
+    ports:
+      - "4003:4003"
+      - "4004:4004"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+    networks:
+      - api-network
+
+  recommendation-service:
+    build:
+      context: ../../services/recommendation
+      dockerfile: Dockerfile
+    ports:
+      - "4005:4005"
+      - "4006:4006"
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+    networks:
+      - api-network
+
+networks:
+  api-network:
+    driver: bridge

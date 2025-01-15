@@ -1,0 +1,21 @@
+# Production Resource Limits
+resources:
+  trademark-service:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+      
+  copyright-service:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+      
+  recommendation-service:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+      
+  database:
+    limits:
+      cpu: 2000m
+      memory: 4Gi

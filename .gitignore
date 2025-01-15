@@ -51,3 +51,19 @@ out/
 *.swo
 *.bak
 *.orig
+
+# SSL Certificates
+backend/deployment/network/ssl/certificates/*
+!backend/deployment/network/ssl/certificates/.gitkeep
+
+# Deployment Environment Files
+backend/deployment/environments/**/env.yml
+
+# Monitoring data
+backend/deployment/grafana/data/
+backend/deployment/prometheus/data/
+backend/deployment/loki/data/
+
+# Kubernetes secrets
+backend/deployment/k8s/**/*secret*.yml
+backend/deployment/k8s/**/kubeconfig

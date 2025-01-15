@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: service-quotas
+spec:
+  hard:
+    # Service-specific quotas from architecture.md
+    requests.cpu: "4"
+    requests.memory: "8Gi"
+    limits.cpu: "4"
+    limits.memory: "8Gi"
+
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: service-pods
+spec:
+  hard:
+    # Individual service limits from architecture.md
+    trademark-service.limits.cpu: "500m"
+    trademark-service.limits.memory: "1Gi"
+    
+    copyright-service.limits.cpu: "500m"
+    copyright-service.limits.memory: "1Gi"
+    
+    recommendation-service.limits.cpu: "1000m"
+    recommendation-service.limits.memory: "2Gi"
+    
+    database.limits.cpu: "2000m"
+    database.limits.memory: "4Gi"
+
+---
+# Default LimitRange for pods without specific limits
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+spec:
+  limits:
+  - default:
+      cpu: "500m"
+      memory: "1Gi"
+    defaultRequest:
+      cpu: "250m"
+      memory: "512Mi"
+    type: Container

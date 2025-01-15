@@ -30,3 +30,11 @@ scrape_configs:
     static_configs:
       - targets: ['copyright:4003', 'copyright:4004']
     metrics_path: '/metrics'
+
+  - job_name: 'service-discovery'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true

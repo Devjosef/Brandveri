@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: health-check-config
+data:
+  # Match nginx.conf health_check settings
+  trademark-health: |
+    interval: 10s
+    fails: 3
+    passes: 2
+    uri: /health
+    ports: [4001, 4002]
+
+  copyright-health: |
+    interval: 10s
+    fails: 3
+    passes: 2
+    uri: /health
+    ports: [4003, 4004]
+
+  recommendation-health: |
+    interval: 10s
+    fails: 3
+    passes: 2
+    uri: /health
+    ports: [4005, 4006]
