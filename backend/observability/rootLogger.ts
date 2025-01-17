@@ -12,6 +12,8 @@ class LoggerManager extends EventEmitter {
 
   private constructor() {
     super();
+    LoggerConfiguration.initialize();
+    
     this.loggers = new Map();
     this.currentEnv = (process.env.NODE_ENV as Environment) || 'development';
     this.initializeLoggers();

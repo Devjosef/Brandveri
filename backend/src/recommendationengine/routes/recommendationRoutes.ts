@@ -1,50 +1,109 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Router, Request, Response } from 'express';
 import recommendationController from '../controllers/recommendationController';
 import { sensitiveOpsLimiter } from '../../../middleware/ratelimiter';
 import { authenticateToken } from '../../../middleware/auth';
 import { corsMiddleware } from '../../../middleware/corsMiddleware';
-import { AsyncLock } from '../../utils/AsyncLock';
+import {AsyncLock} from '../../utils/AsyncLock';
 import { loggers } from '../../../observability/contextLoggers';
-import { Counter } from 'prom-client';
+import { Counter, Histogram } from 'prom-client';
+import { Invariant } from '../../utils/invariant';
 
-const router = express.Router();
+const router: Router = express.Router();
 const logger = loggers.recommendation;
+const asyncLock = new AsyncLock();
 
-const routeMetrics = new Counter({
-    name: 'recommendation_route_requests_total',
-    help: 'Total number of requests to recommendation routes',
-    labelNames: ['method', 'path', 'status']
-});
+/**
+ * We separate metrics to detect:
+ * - Recommendation quality patterns
+ * - User interaction flows
+ * - System performance impacts
+ */
+const routeMetrics = {
+    requests: new Counter({
+        name: 'recommendation_route_requests_total',
+        help: 'Total number of recommendation route requests',
+        labelNames: ['method', 'path', 'status']
+    }),
+    latency: new Histogram({
+        name: 'recommendation_route_latency_seconds',
+        help: 'Latency of recommendation operations',
+        labelNames: ['method', 'path'],
+        buckets: [0.1, 0.5, 1, 2, 5]
+    })
+};
 
-router.post('/recommendations', 
-    corsMiddleware,
-    authenticateToken,
-    sensitiveOpsLimiter,
-    async (req: Request, res: Response, _next: NextFunction) => {
-        const asyncLock = new AsyncLock();
+/**
+ * Factory pattern enables:
+ * - Consistent middleware chains
+ * - Isolated performance monitoring
+ * - Centralized error handling
+ */
+const createRecommendationRoute = () => {
+    const baseMiddleware = [
+        corsMiddleware,
+        authenticateToken,
+        sensitiveOpsLimiter
+    ];
+
+    /**
+     * Lock by user to:
+     * - Prevent recommendation spam
+     * - Ensure consistent user experience
+     * - Manage downstream service load
+     */
+    const requestHandler = async (req: Request, res: Response): Promise<void> => {
+        const timer = routeMetrics.latency.startTimer();
+        const lockKey = `recommendations-${req.user?.id || req.ip}`;
+        
         try {
-            await asyncLock.acquire('recommendations');
-            logger.info({ 
-                userId: req.user?.id,
-                path: '/recommendations',
-                method: 'POST'
-            }, 'Processing recommendation request');
-            
-            routeMetrics.inc({ method: 'POST', path: '/recommendations' });
-            
+            await asyncLock.acquire(lockKey);
+            routeMetrics.requests.inc({ 
+                method: 'POST', 
+                path: '/recommendations', 
+                status: 'attempt' 
+            });
+
             res.setHeader('Cache-Control', 'no-store');
             res.setHeader('Pragma', 'no-cache');
             
             await recommendationController.getRecommendations(req, res);
+            
+            routeMetrics.requests.inc({ 
+                method: 'POST', 
+                path: '/recommendations', 
+                status: 'success' 
+            });
         } catch (error) {
-            logger.error({
+            logger.error({ 
                 error: error instanceof Error ? error.message : 'Unknown error',
                 path: '/recommendations',
                 method: 'POST'
-            }, 'Route handler error');
+            }, 'Recommendation route error');
+            routeMetrics.requests.inc({ 
+                method: 'POST', 
+                path: '/recommendations', 
+                status: 'error' 
+            });
             throw error;
         } finally {
-            asyncLock.release('recommendations');
+            asyncLock.release(lockKey);
+            timer({ method: 'POST', path: '/recommendations' });
         }
-    }
+    };
+
+    return [...baseMiddleware, requestHandler];
+};
+
+/**
+ * Early router validation prevents:
+ * - Runtime middleware chain errors
+ * - Invalid route registrations
+ */
+Invariant.assert(
+    router instanceof Router,
+    'Express router must be initialized'
 );
+
+router.post('/recommendations', ...createRecommendationRoute());
+
+export { router as recommendationRoutes };

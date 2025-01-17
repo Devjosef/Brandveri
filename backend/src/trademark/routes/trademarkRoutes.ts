@@ -108,4 +108,4 @@ Invariant.assert(
 
 router.get('/search', ...createSearchRoute());
 
-export default router;
+export { router as trademarkRoutes };

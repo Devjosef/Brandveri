@@ -6,7 +6,7 @@ import { RecommendationError, CacheError } from '../data/recommendationDAL';
 import { Counter, Histogram } from 'prom-client';
 import crypto from 'crypto';
 import { validatePayloadSize, sanitizeRequest } from '../../utils/requestValidators';
-import { CircuitBreaker } from '../../utils/circuitBreaker';
+import { CircuitBreaker } from '../../utils/CircuitBreaker';
 import { RequestContext } from '../../utils/requestContext';
 import { RecommendationRequest } from '../../../types/recommendationEngine';
 
@@ -17,7 +17,9 @@ const REQUEST_TIMEOUT = 30000; // 30 seconds
 
 const controllerBreaker = new CircuitBreaker('controller', {
     failureThreshold: 5,
-    resetTimeout: 60000
+    resetTimeout: 60000,
+    healthCheckInterval: 5000, 
+    maxConcurrent: 10 
 });
 
 const logger = loggers.recommendation;

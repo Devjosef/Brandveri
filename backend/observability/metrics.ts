@@ -7,7 +7,7 @@ const logger = loggers.metrics;
 // Initialize metrics registry
 const register = new client.Registry();
 
-// Add default metrics (CPU, memory, etc.)
+// Default metrics (CPU, memory, etc.)
 client.collectDefaultMetrics({
   register,
   prefix: 'brandveri_'

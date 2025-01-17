@@ -1,19 +1,19 @@
-import { LoggerOptions } from 'pino';
+import pino, { LoggerOptions } from 'pino';
 import { z } from 'zod';
 import { TransportChain } from '../observability/transportChain';
 import { env } from './envlogger';
 
 const transportSchema = z.object({
-  target: z.string(),
+  target: z.string().optional(),
   options: z.object({
     colorize: z.boolean().optional(),
     translateTime: z.string().optional(),
     ignore: z.string().optional()
   }).optional()
-});
+}).optional();
 
 const loggerOptionsSchema = z.object({
-  level: z.enum(['error', 'warn', 'info', 'debug', 'trace']),
+  level: z.enum(['error', 'warn', 'info', 'debug', 'trace']).default('info'),
   transport: transportSchema.optional(),
   formatters: z.record(z.any()).optional(),
   redact: z.object({
@@ -31,34 +31,45 @@ interface LoggerConfigOptions {
 
 export class LoggerConfiguration {
   private static transportChain: TransportChain;
+  private static isInitialized = false;
 
   public static initialize(): void {
+    if (this.isInitialized) return;
+    
     this.transportChain = new TransportChain();
     
-    // Addition of Loki transport
-    this.transportChain.addTransport('loki', {
-      type: 'loki',
-      priority: 1,
-      options: {
-        host: env.LOKI_HOST,
-        port: env.LOKI_PORT,
-        labels: { app: env.LOKI_APP_LABEL }
-      }
-    });
+    // Addition of Loki transport if configured
+    if (env.LOKI_HOST && env.LOKI_PORT) {
+      this.transportChain.addTransport('loki', {
+        type: 'loki',
+        priority: 1,
+        options: {
+          host: env.LOKI_HOST,
+          port: env.LOKI_PORT,
+          labels: { app: env.LOKI_APP_LABEL }
+        }
+      });
+    }
 
-    // Addition of File transport
-    this.transportChain.addTransport('file', {
-      type: 'file',
-      priority: 2,
-      options: {
-        path: env.LOG_FILE_PATH,
-        rotate: true,
-        maxSize: env.LOG_FILE_MAX_SIZE
-      }
-    });
+    // Addition of File transport if configured
+    if (env.LOG_FILE_PATH) {
+      this.transportChain.addTransport('file', {
+        type: 'file',
+        priority: 2,
+        options: {
+          path: env.LOG_FILE_PATH,
+          rotate: true,
+          maxSize: env.LOG_FILE_MAX_SIZE
+        }
+      });
+    }
 
-    // Set fallback
-    this.transportChain.setFallback('loki', 'file');
+    // Set fallback only if both transports exist
+    if (env.LOKI_HOST && env.LOG_FILE_PATH) {
+      this.transportChain.setFallback('loki', 'file');
+    }
+
+    this.isInitialized = true;
   }
 
   private static validateConfig(config: unknown): LoggerOptions {
@@ -67,7 +78,7 @@ export class LoggerConfiguration {
 
   public static createConfig(options: LoggerConfigOptions): LoggerOptions {
     const baseConfig: LoggerOptions = {
-      level: options.includeDebug ? 'debug' : 'info',
+      level: process.env.LOG_LEVEL?.split(',')[0]?.trim() as pino.LevelWithSilent || 'info',
       formatters: {
         level: (label) => ({ level: label }),
         bindings: (bindings) => ({ 
@@ -94,7 +105,14 @@ export class LoggerConfiguration {
           requestId: req.id
         })
       },
-      transport: this.transportChain.getTransportConfig()
+      transport: this.transportChain?.getTransportConfig() || {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'SYS:standard',
+          ignore: 'pid,hostname'
+        }
+      }
     };
 
     if (options.pretty) {

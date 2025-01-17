@@ -5,7 +5,7 @@ import { Redis } from 'ioredis';
 import { paymentMetrics } from '../utils/paymentMetrics';
 
 class PaymentService {
-  private stripe: Stripe;
+  public stripe: Stripe;
   private redis: Redis;
   private logger = loggers.payment;
 
