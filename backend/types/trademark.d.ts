@@ -164,3 +164,27 @@ export interface TrademarkCacheKey {
     segment: number;
     jurisdiction?: JurisdictionType[];
 }
+
+export interface TrademarkSearchResult {
+    id: string;
+    name: string;
+    status: TrademarkStatus;
+    owner: string;
+    filingDate: Date;
+    registrationDate?: Date;
+    niceClasses: NiceClassification[];
+    similarity?: number;
+}
+
+export interface TrademarkDetails extends TrademarkSearchResult {
+    description?: string;
+    goods_services?: string[];
+    representatives?: string[];
+    history?: TrademarkHistoryEntry[];
+}
+
+export interface TrademarkHistoryEntry {
+    date: Date;
+    action: string;
+    description: string;
+}

@@ -4,17 +4,24 @@ import { TransportChain } from '../observability/transportChain';
 import { env } from './envlogger';
 
 const transportSchema = z.object({
-  target: z.string().optional(),
+  target: z.string(),
   options: z.object({
     colorize: z.boolean().optional(),
     translateTime: z.string().optional(),
     ignore: z.string().optional()
   }).optional()
-}).optional();
+}).default({
+  target: 'pino-pretty',
+  options: {
+    colorize: true,
+    translateTime: 'SYS:standard',
+    ignore: 'pid,hostname'
+  }
+});
 
 const loggerOptionsSchema = z.object({
   level: z.enum(['error', 'warn', 'info', 'debug', 'trace']).default('info'),
-  transport: transportSchema.optional(),
+  transport: transportSchema,
   formatters: z.record(z.any()).optional(),
   redact: z.object({
     paths: z.array(z.string()),
@@ -46,26 +53,27 @@ export class LoggerConfiguration {
         options: {
           host: env.LOKI_HOST,
           port: env.LOKI_PORT,
-          labels: { app: env.LOKI_APP_LABEL }
+          labels: { app: env.LOKI_APP_LABEL || 'brandveri' }
         }
       });
     }
 
     // Addition of File transport if configured
-    if (env.LOG_FILE_PATH) {
+    const defaultLogPath = './logs/app.log';
+    if (env.LOG_FILE_PATH || defaultLogPath) {
       this.transportChain.addTransport('file', {
         type: 'file',
         priority: 2,
         options: {
-          path: env.LOG_FILE_PATH,
+          path: env.LOG_FILE_PATH || defaultLogPath,
           rotate: true,
-          maxSize: env.LOG_FILE_MAX_SIZE
+          maxSize: env.LOG_FILE_MAX_SIZE || '10M'
         }
       });
     }
 
     // Set fallback only if both transports exist
-    if (env.LOKI_HOST && env.LOG_FILE_PATH) {
+    if (env.LOKI_HOST && (env.LOG_FILE_PATH || defaultLogPath)) {
       this.transportChain.setFallback('loki', 'file');
     }
 
@@ -79,6 +87,14 @@ export class LoggerConfiguration {
   public static createConfig(options: LoggerConfigOptions): LoggerOptions {
     const baseConfig: LoggerOptions = {
       level: process.env.LOG_LEVEL?.split(',')[0]?.trim() as pino.LevelWithSilent || 'info',
+      transport: {
+        target: 'pino-pretty',
+        options: {
+          colorize: true,
+          translateTime: 'SYS:standard',
+          ignore: 'pid,hostname'
+        }
+      },
       formatters: {
         level: (label) => ({ level: label }),
         bindings: (bindings) => ({ 
@@ -104,30 +120,8 @@ export class LoggerConfiguration {
           parameters: options.includeDebug ? req.params : undefined,
           requestId: req.id
         })
-      },
-      transport: this.transportChain?.getTransportConfig() || {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname'
-        }
       }
     };
-
-    if (options.pretty) {
-      return this.validateConfig({
-        ...baseConfig,
-        transport: {
-          target: 'pino-pretty',
-          options: {
-            colorize: true,
-            translateTime: 'SYS:standard',
-            ignore: 'pid,hostname'
-          }
-        }
-      });
-    }
 
     return this.validateConfig(baseConfig);
   }

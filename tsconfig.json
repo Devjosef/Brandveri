@@ -10,7 +10,7 @@
       "rootDir": "./backend",                           // Root folder for TypeScript source files
       "strict": true,                               // Enable all strict type-checking options
       "noImplicitAny": true,                        // Disallow the use of `any` type unless explicitly defined
-      "strictNullChecks": true,                     // Ensure values can’t be null unless explicitly allowed
+      "strictNullChecks": true,                     // Ensure values can't be null unless explicitly allowed
       "strictFunctionTypes": true,                  // Ensure function types are checked correctly
       "strictBindCallApply": true,                  // Ensure `bind`, `call`, and `apply` methods are properly typed
       "noImplicitThis": true,                       // Disallow `this` being used implicitly
@@ -47,9 +47,22 @@
   
       /* Experimental Options */
       "experimentalDecorators": true,               // Enable decorators, if you plan to use them (useful with TypeORM or NestJS)
-      "emitDecoratorMetadata": true                 // Emit type metadata when decorators are used
+      "emitDecoratorMetadata": true,                 // Emit type metadata when decorators are used
+
+      "baseUrl": ".",
+      "paths": {
+        "*": ["*", "backend/types/*"],
+        "@types/*": ["backend/types/*"]
+      },
+      "typeRoots": [
+        "./node_modules/@types",
+        "./backend/types"
+      ]
     },
-    "include": ["backend/**/*.ts"],
+    "include": [
+      "backend/**/*.ts",
+      "backend/**/*.d.ts"  // Explicitly include .d.ts files
+    ],
     "exclude": ["node_modules", "dist"]
   }
   

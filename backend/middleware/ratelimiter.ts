@@ -201,43 +201,69 @@ const customStore: Store & {
     }
 };
 
+// Create separate store instances, to prevent store reuse.
+const authLimiterStore = {
+    ...customStore,
+    getCurrentLoad: () => rateLimitStore.size,
+    reset: async () => {
+        await customStore.reset();
+    }
+};
+
+const sensitiveLimiterStore = {
+    ...customStore,
+    getCurrentLoad: () => rateLimitStore.size,
+    reset: async () => {
+        await customStore.reset();
+    }
+};
+
+const paymentLimiterStore = {
+    ...customStore,
+    getCurrentLoad: () => rateLimitStore.size,
+    reset: async () => {
+        await customStore.reset();
+    }
+};
+
 export const authRateLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    windowMs: Config.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000,
+    max: Config.AUTH_RATE_LIMIT_MAX || 5,
     standardHeaders: true,
     legacyHeaders: false,
+    store: authLimiterStore,
     message: {
-      status: 'error',
-      code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Too many authentication attempts. Please try again later.'
+        status: 'error',
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Too many authentication attempts. Please try again later.'
     }
-  });
+});
 
 export const sensitiveOpsLimiter = rateLimit({
-  windowMs: Config.SENSITIVE_RATE_LIMIT_WINDOW_MS,
-  max: Config.SENSITIVE_RATE_LIMIT_MAX,
-  standardHeaders: true,
-  legacyHeaders: false,
-  store: customStore,
+    windowMs: Config.SENSITIVE_RATE_LIMIT_WINDOW_MS,
+    max: Config.SENSITIVE_RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: sensitiveLimiterStore,
 }) as ExtendedRateLimitRequestHandler;
 
 export const paymentRateLimiter = rateLimit({
-  windowMs: Config.PAYMENT_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000, // 15 minutes
-  max: Config.PAYMENT_RATE_LIMIT_MAX || 30, // 30 requests per window
-  standardHeaders: true,
-  legacyHeaders: false,
-  store: customStore,
-  keyGenerator: (req) => {
-    return req.ip + ':' + (req.body?.customerId || 'anonymous');
-  },
-  handler: (_req: Request, res: Response) => {
-    rateLimitMetrics.exceeded.inc({ limiter_type: 'payment' });
-    res.status(429).json({
-      status: 'error',
-      code: 'PAYMENT_RATE_LIMIT_EXCEEDED',
-      message: 'Too many payment requests, please try again later'
-    });
-  }
+    windowMs: Config.PAYMENT_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000,
+    max: Config.PAYMENT_RATE_LIMIT_MAX || 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: paymentLimiterStore,
+    keyGenerator: (req) => {
+        return req.ip + ':' + (req.body?.customerId || 'anonymous');
+    },
+    handler: (_req: Request, res: Response) => {
+        rateLimitMetrics.exceeded.inc({ limiter_type: 'payment' });
+        res.status(429).json({
+            status: 'error',
+            code: 'PAYMENT_RATE_LIMIT_EXCEEDED',
+            message: 'Too many payment requests, please try again later'
+        });
+    }
 });
 
 // Export custom store
@@ -247,10 +273,10 @@ export { customStore };
 export const copyrightLimiter = {
     search: rateLimit({
         windowMs: Config.RATE_LIMIT_WINDOW_MS,
-        max: 100, // 100 requests per window
+        max: 100,
         standardHeaders: true,
         legacyHeaders: false,
-        store: customStore,
+        store: { ...customStore },
         keyGenerator: (req) => {
             return req.ip + ':copyright-search';
         },
@@ -266,10 +292,10 @@ export const copyrightLimiter = {
 
     details: rateLimit({
         windowMs: Config.RATE_LIMIT_WINDOW_MS,
-        max: 200, // 200 requests per window
+        max: 200,
         standardHeaders: true,
         legacyHeaders: false,
-        store: customStore,
+        store: { ...customStore },
         keyGenerator: (req) => {
             return req.ip + ':copyright-details';
         },

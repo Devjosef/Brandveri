@@ -2,7 +2,7 @@ import https from 'https';
 import { URL } from 'url';
 import { 
   Trademark, 
-  TrademarkSearchParams, 
+  TrademarkSearchParams,
   TrademarkResponse,
   TrademarkStatus,
   TrademarkErrorCode
