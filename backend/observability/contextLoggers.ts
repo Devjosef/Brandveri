@@ -69,6 +69,13 @@ export const loggers = {
       component: 'core'
     }
   }),
+  test: loggerRegistry.getLogger({ 
+    context: 'test',
+    metadata: { 
+      type: 'testing',
+      component: 'test-suite'
+    }
+  }),
   invariant: loggerRegistry.getLogger({ 
     context: 'invariant',
     metadata: { 
