@@ -1,0 +1,34 @@
+{
+    "validCache": {
+      "key": "trademark:search:query",
+      "value": {
+        "query": "Example Brand",
+        "results": [
+          {
+            "id": "12345",
+            "name": "Example Brand",
+            "status": "REGISTERED",
+            "niceClasses": [25, 35]
+          }
+        ],
+        "timestamp": "2024-01-01T00:00:00Z"
+      },
+      "ttl": 3600
+    },
+    "expiredCache": {
+      "key": "trademark:search:old",
+      "value": {
+        "query": "Old Brand",
+        "results": [
+          {
+            "id": "67890",
+            "name": "Old Brand",
+            "status": "PENDING",
+            "niceClasses": [9, 42]
+          }
+        ],
+        "timestamp": "2023-01-01T00:00:00Z"
+      },
+      "ttl": -1
+    }
+  }

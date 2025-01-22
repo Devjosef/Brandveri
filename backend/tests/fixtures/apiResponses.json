@@ -1,0 +1,50 @@
+{
+    "uspto": {
+      "success": {
+        "status": 200,
+        "data": {
+          "trademarks": [
+            {
+              "serialNumber": "12345678",
+              "registrationNumber": "87654321",
+              "markVerbalElementText": "Example Brand",
+              "status": "REGISTERED",
+              "filingDate": "2024-01-01",
+              "niceClasses": [25, 35]
+            }
+          ]
+        }
+      },
+      "errors": {
+        "rateLimited": {
+          "status": 429,
+          "error": "Too Many Requests"
+        },
+        "malformed": {
+          "status": 200,
+          "data": null
+        },
+        "timeout": {
+          "status": 504,
+          "error": "Gateway Timeout"
+        }
+      }
+    },
+    "euipo": {
+      "similar": {
+        "status": 200,
+        "data": {
+          "similarityScore": 0.95,
+          "matches": [
+            {
+              "trademark": "Similar Brand",
+              "registrationNumber": "EU12345678",
+              "status": "REGISTERED",
+              "niceClasses": [25],
+              "similarityScore": 0.95
+            }
+          ]
+        }
+      }
+    }
+  }

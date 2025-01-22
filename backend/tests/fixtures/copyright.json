@@ -1,0 +1,92 @@
+{
+    "validCases": {
+      "standardSoftware": {
+        "title": "Standard Software v1.0",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2024",
+        "authorName": "John Doe",
+        "status": "PENDING",
+        "programmingLanguage": "JavaScript",
+        "sourceCodeUrl": "https://github.com/example/standard-software"
+      },
+      "openSource": {
+        "title": "Open Source Library v2.1",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2024",
+        "authorName": ["Jane Doe", "John Smith"],
+        "status": "PENDING",
+        "programmingLanguage": "Python",
+        "sourceCodeUrl": "https://github.com/example/open-source-lib",
+        "license": "MIT"
+      },
+      "proprietarySoftware": {
+        "title": "Enterprise Solution v3.0",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2024",
+        "authorName": "Tech Corp Inc",
+        "status": "PENDING",
+        "programmingLanguage": "Java",
+        "isObfuscated": true,
+        "containsThirdPartyCode": false
+      }
+    },
+    "edgeCases": {
+      "multiLanguageProject": {
+        "title": "Full Stack App v1.0",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2024",
+        "authorName": "Dev Team",
+        "status": "PENDING",
+        "programmingLanguage": ["TypeScript", "Python", "SQL"],
+        "sourceCodeUrl": "https://github.com/example/fullstack-app"
+      },
+      "derivedWork": {
+        "title": "Modified Framework v2.0",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2024",
+        "authorName": "Jane Developer",
+        "status": "PENDING",
+        "programmingLanguage": "JavaScript",
+        "originalWork": "Base Framework v1.0",
+        "originalAuthor": "Original Corp",
+        "modifications": ["Added Features", "Security Patches"]
+      },
+      "aiGeneratedCode": {
+        "title": "AI Assistant v1.0",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2024",
+        "authorName": "Human Developer",
+        "status": "PENDING",
+        "programmingLanguage": "Python",
+        "aiTools": ["GPT-4", "Copilot"],
+        "humanModified": true
+      }
+    },
+    "invalidCases": {
+      "emptyTitle": {
+        "title": "",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2024",
+        "authorName": "John Doe",
+        "status": "PENDING",
+        "programmingLanguage": "JavaScript"
+      },
+      "futureYear": {
+        "title": "Future Software",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2050",
+        "authorName": "Future Dev",
+        "status": "PENDING",
+        "programmingLanguage": "Quantum++"
+      },
+      "noSourceCode": {
+        "title": "Missing Source v1.0",
+        "type": "SOFTWARE",
+        "yearOfCreation": "2024",
+        "authorName": "John Doe",
+        "status": "PENDING",
+        "programmingLanguage": "Python",
+        "sourceCodeUrl": ""
+      }
+    }
+  }
