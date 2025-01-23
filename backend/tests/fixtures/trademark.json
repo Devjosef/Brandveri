@@ -1,43 +1,34 @@
 {
-    "validCases": {
-      "standardTrademark": {
-        "name": "Normal Brand",
-        "niceClasses": [25, 28],
-        "status": "PENDING"
-      },
-      "specialCharacters": {
-        "name": "Brand™®©",
-        "niceClasses": [9],
-        "status": "PENDING"
-      },
-      "multiLanguage": {
-        "name": "品牌 Brand マーク",
-        "niceClasses": [35],
-        "status": "PENDING"
-      }
+  "valid": {
+    "basic": {
+      "name": "Test Brand",
+      "niceClasses": [9, 42],
+      "description": "Software services"
     },
-    "edgeCases": {
-      "maxLengthName": {
-        "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        "niceClasses": [1],
-        "status": "PENDING"
-      },
-      "maxNiceClasses": {
-        "name": "MultiClass",
-        "niceClasses": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45],
-        "status": "PENDING"
-      }
+    "complex": {
+      "name": "Test™ Brand®",
+      "niceClasses": [9, 35, 42],
+      "description": "Full service offering"
+    }
+  },
+  "invalid": {
+    "nameTooLong": {
+      "name": "This trademark name is way too long and should fail validation",
+      "niceClasses": [9]
     },
-    "invalidCases": {
-      "emptyName": {
-        "name": "",
-        "niceClasses": [1],
-        "status": "PENDING"
-      },
-      "invalidNiceClass": {
-        "name": "Invalid Class",
-        "niceClasses": [0, 46],
-        "status": "PENDING"
-      }
+    "invalidClass": {
+      "name": "Test Brand",
+      "niceClasses": [999]
+    }
+  },
+  "edge": {
+    "specialChars": {
+      "name": "Test_Brand-2023®™",
+      "niceClasses": [9]
+    },
+    "minimalData": {
+      "name": "T",
+      "niceClasses": [9]
     }
   }
+}

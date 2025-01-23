@@ -1,62 +1,44 @@
-import { createTestDatabase, closeTestDatabase } from './testDb';
-import { DataSource } from 'typeorm';
-import redisClient from '../../cache/redis';
+import '@testing-library/jest-dom';
 import { loggers } from '../../observability/contextLoggers';
 
 const logger = loggers.test;
 
-let dataSource: DataSource;
-
-// Global setup - runs once before all tests
-beforeAll(async () => {
-  try {
-    // Initialize test database
-    dataSource = await createTestDatabase();
-    
-    // Initialize Redis for testing
-    await redisClient.connect();
-    
-    logger.info('Test environment initialized');
-  } catch (error) {
-    logger.error({ error }, 'Failed to initialize test environment');
-    throw error;
-  }
+// Global test configuration.
+beforeAll(() => {
+  // Suppresses noisy logs, keeps important ones.
+  jest.spyOn(console, 'log').mockImplementation(() => {});
+  jest.spyOn(console, 'debug').mockImplementation(() => {});
+  
+  
+  logger.info('Test suite started');
+  
+  // Reasonable timeouts
+  jest.setTimeout(5000); 
+  
+  // Sets the test environment.
+  process.env.NODE_ENV = 'test';
 });
 
-// Global teardown - runs once after all tests
-afterAll(async () => {
-  try {
-    // Cleanup database connection
-    await closeTestDatabase(dataSource);
-    
-    // Cleanup Redis connection
-    await redisClient.quit();
-    
-    logger.info('Test environment cleaned up');
-  } catch (error) {
-    logger.error({ error }, 'Failed to cleanup test environment');
-    throw error;
-  }
+// Resets everything between tests.
+afterEach(() => {
+  // Clear all mocks
+  jest.clearAllMocks();
+  jest.restoreAllMocks();
+  
+  // Resets timers if used during tests.
+  jest.useRealTimers();
+  
+  // Clear test env variables.
+  process.env.TEST_OVERRIDE = undefined;
 });
 
-// Reset state between tests
-afterEach(async () => {
-  try {
-    // Clear database tables
-    if (dataSource?.isInitialized) {
-      const entities = dataSource.entityMetadatas;
-      for (const entity of entities) {
-        const repository = dataSource.getRepository(entity.name);
-        await repository.clear();
-      }
-    }
-    
-    // Clear Redis cache
-    await redisClient.flushall();
-    
-    logger.debug('Test state reset completed');
-  } catch (error) {
-    logger.error({ error }, 'Failed to reset test state');
-    throw error;
-  }
+// Cleanup after all tests.
+afterAll(() => {
+  logger.info('Test suite completed');
+});
+
+// Global error handler for unhandled promises.
+process.on('unhandledRejection', (error) => {
+  logger.error('Unhandled Promise Rejection:', error);
+  process.exit(1); // Fail tests on unhandled rejections
 });

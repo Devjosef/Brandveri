@@ -1,5 +1,6 @@
 {
-    "validCache": {
+  "valid": {
+    "search": {
       "key": "trademark:search:query",
       "value": {
         "query": "Example Brand",
@@ -15,20 +16,30 @@
       },
       "ttl": 3600
     },
-    "expiredCache": {
+    "recommendation": {
+      "key": "rec:tech:b2b",
+      "value": {
+        "industry": "Technology",
+        "recommendations": ["CloudTech", "TechPro"],
+        "timestamp": "2024-01-01T00:00:00Z"
+      },
+      "ttl": 1800
+    }
+  },
+  "invalid": {
+    "expired": {
       "key": "trademark:search:old",
       "value": {
         "query": "Old Brand",
-        "results": [
-          {
-            "id": "67890",
-            "name": "Old Brand",
-            "status": "PENDING",
-            "niceClasses": [9, 42]
-          }
-        ],
+        "results": [],
         "timestamp": "2023-01-01T00:00:00Z"
       },
       "ttl": -1
+    },
+    "malformed": {
+      "key": "bad:data",
+      "value": "not-json-object",
+      "ttl": 3600
     }
   }
+}

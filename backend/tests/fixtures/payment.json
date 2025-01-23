@@ -1,78 +1,21 @@
 {
-    "validCases": {
-      "standardPayment": {
-        "amount": 99.99,
-        "currency": "USD",
-        "paymentMethod": "CREDIT_CARD",
-        "status": "COMPLETED",
-        "transactionId": "txn_123456789"
-      },
-      "partialPayment": {
-        "amount": 49.99,
-        "currency": "USD",
-        "paymentMethod": "DEBIT_CARD",
-        "status": "PARTIALLY_PAID",
-        "remainingAmount": 50.00,
-        "transactionId": "txn_987654321"
-      },
-      "installmentPayment": {
-        "amount": 299.99,
-        "currency": "USD",
-        "paymentMethod": "CREDIT_CARD",
-        "status": "INSTALLMENT",
-        "installments": 3,
-        "installmentAmount": 100.00,
-        "transactionId": "txn_install_123"
-      }
+  "valid": {
+    "card": {
+      "amount": 99.99,
+      "currency": "USD",
+      "cardToken": "tok_visa"
     },
-    "edgeCases": {
-      "declinedPayment": {
-        "amount": 99.99,
-        "currency": "USD",
-        "paymentMethod": "CREDIT_CARD",
-        "status": "DECLINED",
-        "errorCode": "INSUFFICIENT_FUNDS",
-        "transactionId": "txn_declined_123"
-      },
-      "refundedPayment": {
-        "amount": 99.99,
-        "currency": "USD",
-        "paymentMethod": "CREDIT_CARD",
-        "status": "REFUNDED",
-        "refundReason": "CUSTOMER_REQUEST",
-        "originalTransactionId": "txn_original_123",
-        "refundTransactionId": "txn_refund_123"
-      },
-      "disputedPayment": {
-        "amount": 99.99,
-        "currency": "USD",
-        "paymentMethod": "CREDIT_CARD",
-        "status": "DISPUTED",
-        "disputeReason": "UNAUTHORIZED_CHARGE",
-        "transactionId": "txn_disputed_123"
-      }
-    },
-    "invalidCases": {
-      "invalidAmount": {
-        "amount": -50.00,
-        "currency": "USD",
-        "paymentMethod": "CREDIT_CARD",
-        "status": "ERROR",
-        "errorCode": "INVALID_AMOUNT"
-      },
-      "expiredCard": {
-        "amount": 99.99,
-        "currency": "USD",
-        "paymentMethod": "CREDIT_CARD",
-        "status": "FAILED",
-        "errorCode": "EXPIRED_CARD"
-      },
-      "fraudSuspected": {
-        "amount": 9999.99,
-        "currency": "USD",
-        "paymentMethod": "CREDIT_CARD",
-        "status": "BLOCKED",
-        "errorCode": "FRAUD_SUSPECTED"
-      }
+    "crypto": {
+      "amount": 99.99,
+      "currency": "ETH",
+      "walletAddress": "0x123..."
+    }
+  },
+  "invalid": {
+    "negativeAmount": {
+      "amount": -10,
+      "currency": "USD",
+      "cardToken": "tok_visa"
     }
   }
+}

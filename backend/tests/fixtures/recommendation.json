@@ -1,88 +1,26 @@
 {
-  "validCases": {
-    "similarTrademark": {
-      "query": "Nike Shoes",
-      "similarityScore": 0.85,
-      "matches": [
-        {
-          "id": "tm_123",
-          "name": "Nike Sports",
-          "niceClasses": [25],
-          "status": "REGISTERED",
-          "matchReason": "SIMILAR_NAME"
-        }
-      ]
+  "inputs": {
+    "tech": {
+      "industry": "Technology",
+      "keywords": ["software", "cloud"],
+      "market": "B2B"
     },
-    "similarNiceClass": {
-      "query": "Adidas Clothing",
-      "similarityScore": 0.75,
-      "matches": [
-        {
-          "id": "tm_456",
-          "name": "Sports Gear",
-          "niceClasses": [25],
-          "status": "REGISTERED",
-          "matchReason": "SIMILAR_CLASS"
-        }
-      ]
+    "retail": {
+      "industry": "Retail",
+      "keywords": ["fashion", "luxury"],
+      "market": "B2C"
     }
   },
-  "edgeCases": {
-    "noResults": {
-      "query": "Unique Brand XYZ123",
-      "similarityScore": 0,
-      "matches": []
-    },
-    "multipleMatches": {
-      "query": "Apple",
-      "similarityScore": 0.95,
-      "matches": [
-        {
-          "id": "tm_789",
-          "name": "Apple Inc",
-          "niceClasses": [9, 42],
-          "status": "REGISTERED",
-          "matchReason": "EXACT_MATCH"
-        },
-        {
-          "id": "tm_101",
-          "name": "Apple Foods",
-          "niceClasses": [29, 31],
-          "status": "REGISTERED",
-          "matchReason": "SIMILAR_NAME"
-        }
-      ]
-    },
-    "crossLanguageMatch": {
-      "query": "Apple",
-      "similarityScore": 0.70,
-      "matches": [
-        {
-          "id": "tm_102",
-          "name": "アップル",
-          "niceClasses": [9],
-          "status": "REGISTERED",
-          "matchReason": "TRANSLATION"
-        }
-      ]
-    }
-  },
-  "invalidCases": {
-    "emptyQuery": {
-      "query": "",
-      "error": "EMPTY_QUERY",
-      "matches": []
-    },
-    "tooShortQuery": {
-      "query": "a",
-      "error": "QUERY_TOO_SHORT",
-      "matches": []
-    },
-    "invalidNiceClass": {
-      "query": "Brand",
-      "niceClass": 99,
-      "error": "INVALID_NICE_CLASS",
-      "matches": []
-    }
+  "expected": {
+    "tech": [
+      "CloudTech",
+      "SoftwareHub",
+      "TechSolutions"
+    ],
+    "retail": [
+      "LuxuryStyle",
+      "FashionHub",
+      "RetailPro"
+    ]
   }
 }
