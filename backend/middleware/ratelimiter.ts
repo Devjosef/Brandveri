@@ -4,7 +4,7 @@ import { Counter, Histogram } from 'prom-client';
 import { LRUCache } from 'lru-cache';
 import { Config } from './index';
 
-// Metrics for rate limiting
+// Metrics for rate limiting.
 const rateLimitMetrics = {
   exceeded: new Counter({
     name: 'rate_limit_exceeded_total',
@@ -41,14 +41,14 @@ const rateLimitStore = new LRUCache<string, RateLimitStoreData>({
   updateAgeOnHas: true
 });
 
-// Extend the RateLimitRequestHandler type
+// Extends the RateLimitRequestHandler type.
 interface ExtendedRateLimitRequestHandler extends RateLimitRequestHandler {
     consume: (key: string) => Promise<void>;
     getCurrentLoad: () => number;
 }
 
 /**
- * Custom rate limiting store implementation using LRU cache
+ * Custom rate limiting store, implementation using LRU cache.
  * @implements {Store}
  */
 const customStore: Store & { 
@@ -57,12 +57,12 @@ const customStore: Store & {
     reset: () => Promise<void>;
 } = {
     /**
-     * Initialize the store and warm it up
+     * Initializes the store and warms it up.
      */
     init: async function(): Promise<void> {
         if (!isWarmedUp) {
             try {
-                // Warm up operations here if needed
+                // Warm up operations if needed.
                 isWarmedUp = true;
             } catch (error) {
                 console.error('Store initialization error:', error);
@@ -71,15 +71,15 @@ const customStore: Store & {
     },
 
     /**
-     * Get current load (number of active requests)
+     * Get current load (number of active requests).
      */
     getCurrentLoad(): number {
         return rateLimitStore.size;
     },
 
     /**
-     * Get rate limit info for a key
-     * @param {string} key - The rate limit key
+     * Get rate limit info for a key.
+     * @param {string} key - The rate limit key.
      * @returns {Promise<ClientRateLimitInfo | undefined>}
      */
     async get(key: string) {
@@ -100,8 +100,8 @@ const customStore: Store & {
     },
 
     /**
-     * Increment hits for a key
-     * @param {string} key - The rate limit key
+     * Increment hits for a key.
+     * @param {string} key - The rate limit key.
      * @returns {Promise<ClientRateLimitInfo>}
      */
     async increment(key: string) {
@@ -133,8 +133,8 @@ const customStore: Store & {
     },
 
     /**
-     * Decrement hits for a key
-     * @param {string} key - The rate limit key
+     * Decrement hits for a key.
+     * @param {string} key - The rate limit key.
      */
     async decrement(key: string): Promise<void> {
         const timer = rateLimitMetrics.duration.startTimer({ operation: 'decrement' });
@@ -155,8 +155,8 @@ const customStore: Store & {
     },
 
     /**
-     * Reset rate limit for a key
-     * @param {string} key - The rate limit key
+     * Resets rate limit for a key.
+     * @param {string} key - The rate limit key.
      */
     async resetKey(key: string): Promise<void> {
         const timer = rateLimitMetrics.duration.startTimer({ operation: 'reset' });
@@ -186,7 +186,7 @@ const customStore: Store & {
     },
 
     /**
-     * Reset the rate limiter store
+     * Resets the rate limiter store.
      */
     async reset(): Promise<void> {
         try {
@@ -201,7 +201,7 @@ const customStore: Store & {
     }
 };
 
-// Create separate store instances, to prevent store reuse.
+// Creates a separate store instance, to prevent store reuse.
 const authLimiterStore = {
     ...customStore,
     getCurrentLoad: () => rateLimitStore.size,
@@ -266,10 +266,10 @@ export const paymentRateLimiter = rateLimit({
     }
 });
 
-// Export custom store
+// Exports the custom store.
 export { customStore };
 
-// Copyright rate limiters
+// Copyright rate limiters.
 export const copyrightLimiter = {
     search: rateLimit({
         windowMs: Config.RATE_LIMIT_WINDOW_MS,
@@ -310,7 +310,7 @@ export const copyrightLimiter = {
     })
 } as const;
 
-// Export for testing purposes
+// Export for testing purposes.
 export const __testing__ = {
   clearStore: () => rateLimitStore.clear(),
   getStore: () => rateLimitStore,

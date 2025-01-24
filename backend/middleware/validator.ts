@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { AuthError } from '../auth/utils/AuthError';
 import { sensitiveOpsLimiter } from './ratelimiter';
 import { Counter, Histogram } from 'prom-client';
@@ -17,17 +17,17 @@ const validationDuration = new Histogram({
   labelNames: ['context']
 });
 
-// Define strict types for validation contexts
+// Defines strict for validation contexts
 export type ValidationContext = string;
 
-// This allows the type to be extended
+// Type extension
 export interface ValidationContextMap {
   registration: 'registration';
   login: 'login';
   passwordReset: 'passwordReset';
 }
 
-// Centralized validation schemas
+// Centralized validation schema.
 const ValidationSchemas = {
   username: z.string()
     .trim()
@@ -51,7 +51,7 @@ const ValidationSchemas = {
     .transform(val => val.toLowerCase())
 };
 
-// Schema compositions with strict type checking
+// Schema compositions, with strict type checking
 const RegistrationSchema = z.object({
   username: ValidationSchemas.username,
   email: ValidationSchemas.email,
@@ -63,7 +63,7 @@ const LoginSchema = z.object({
   password: z.string().min(1, 'Password is required')
 }).strict();
 
-// Validation middleware factory with metrics
+// Validation middleware factory, with metrics.
 export const createValidator = (schema: z.ZodSchema, context: ValidationContext) => {
   return async (req: Request, _res: Response, next: NextFunction) => {
     const end = validationDuration.startTimer({ context });
@@ -99,7 +99,7 @@ export const createValidator = (schema: z.ZodSchema, context: ValidationContext)
 };
 
 // Export validation middlewares with rate limiting
-export const validateRegistration = [
+export const validateRegistration: RequestHandler[]  = [
   sensitiveOpsLimiter,
   createValidator(RegistrationSchema, 'registration')
 ];

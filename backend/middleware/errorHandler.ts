@@ -7,12 +7,12 @@ interface AppError extends Error {
   details?: unknown;
 }
 
-// Type predicate to check if error is AppError
+// Type predicate to check, if the error is an AppError
 function isAppError(error: unknown): error is AppError {
   return error instanceof Error && 'statusCode' in error;
 }
 
-// Properly typed error handler
+// Error handler
 export const errorHandler: ErrorRequestHandler = (
   error: unknown,
   _req: Request,
@@ -20,7 +20,7 @@ export const errorHandler: ErrorRequestHandler = (
   _next: NextFunction
 ) => {
   if (isAppError(error)) {
-    // Handle known application errors
+    // Handles known application errors.
     res.status(error.statusCode || 500).json({
       status: 'error',
       code: error.code,
@@ -28,7 +28,7 @@ export const errorHandler: ErrorRequestHandler = (
       details: error.details
     });
   } else {
-    // Handle unknown errors
+    // Handles unknown errors.
     res.status(500).json({
       status: 'error',
       message: 'Internal Server Error'

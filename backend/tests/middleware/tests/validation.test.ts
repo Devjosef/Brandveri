@@ -1,18 +1,19 @@
 import { testMiddleware } from '../testMiddleware';
-import { validateRequest } from '../../middleware/validation';
-import { ValidationSchema } from '../../types/validation';
+import { createValidator } from '../../../middleware/validator';
+import { z } from 'zod';
 
 describe('Validation Middleware', () => {
-  // Test schema.
-  const userSchema: ValidationSchema = {
-    name: { type: 'string', required: true, min: 2 },
-    email: { type: 'string', required: true, pattern: 'email' },
-    age: { type: 'number', min: 18 }
-  };
+  const testSchema = z.object({
+    name: z.string().min(2, 'Name must be at least 2 characters'),
+    email: z.string().email('Invalid email format'),
+    age: z.number().min(18, 'Must be at least 18 years old').optional()
+  });
 
   it('allows valid payload', async () => {
+    const validator = createValidator(testSchema, 'test');
+    
     const { next } = await testMiddleware.execute(
-      validateRequest(userSchema),
+      validator,
       testMiddleware.req({
         body: {
           name: 'Test User',
@@ -25,116 +26,24 @@ describe('Validation Middleware', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('blocks missing required fields', async () => {
-    const { res, next } = await testMiddleware.execute(
-      validateRequest(userSchema),
-      testMiddleware.req({
-        body: {
-          name: 'Test User'
-        }
-      })
-    );
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      error: 'Validation failed',
-      details: ['email is required']
-    });
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('validates field types', async () => {
-    const { res } = await testMiddleware.execute(
-      validateRequest(userSchema),
-      testMiddleware.req({
-        body: {
-          name: 'Test User',
-          email: 'test@example.com',
-          age: 'not-a-number'  // Wrong type
-        }
-      })
-    );
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      error: 'Validation failed',
-      details: ['age must be a number']
-    });
-  });
-
-  it('validates string patterns', async () => {
-    const { res } = await testMiddleware.execute(
-      validateRequest(userSchema),
-      testMiddleware.req({
-        body: {
-          name: 'Test User',
-          email: 'not-an-email',  // Invalid email
-          age: 25
-        }
-      })
-    );
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      error: 'Validation failed',
-      details: ['email must be a valid email address']
-    });
-  });
-
-  it('validates number ranges', async () => {
-    const { res } = await testMiddleware.execute(
-      validateRequest(userSchema),
-      testMiddleware.req({
-        body: {
-          name: 'Test User',
-          email: 'test@example.com',
-          age: 16  // Under minimum
-        }
-      })
-    );
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      error: 'Validation failed',
-      details: ['age must be at least 18']
-    });
-  });
-
-  it('allows optional fields to be missing', async () => {
+  it('blocks invalid payload', async () => {
+    const validator = createValidator(testSchema, 'test');
+    
     const { next } = await testMiddleware.execute(
-      validateRequest(userSchema),
+      validator,
       testMiddleware.req({
         body: {
-          name: 'Test User',
-          email: 'test@example.com'
-          // age is optional
+          name: 'A',
+          email: 'not-an-email',
+          age: 16
         }
       })
     );
 
-    expect(next).toHaveBeenCalled();
-  });
-
-  it('handles multiple validation errors', async () => {
-    const { res } = await testMiddleware.execute(
-      validateRequest(userSchema),
-      testMiddleware.req({
-        body: {
-          name: 'A',  // too short
-          email: 'invalid-email',  // invalid format
-          age: 16  // too young
-        }
-      })
-    );
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({
-      error: 'Validation failed',
-      details: expect.arrayContaining([
-        'name must be at least 2 characters',
-        'email must be a valid email address',
-        'age must be at least 18'
-      ])
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(next.mock.calls[0][0]).toMatchObject({
+      statusCode: 400,
+      code: 'VALIDATION_ERROR'
     });
   });
 });

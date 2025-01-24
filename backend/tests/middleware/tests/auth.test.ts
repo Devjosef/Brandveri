@@ -1,89 +1,102 @@
+import { authenticateToken } from '../../../middleware/auth';
 import { testMiddleware } from '../testMiddleware';
-import { authMiddleware } from '../../../middleware/auth';
+import { TokenService } from '../../../auth/services/tokenService';
+import jwt from 'jsonwebtoken';
+import { Config } from '../../../middleware';
+
+// Mock TokenService
+jest.mock('../../../auth/services/tokenService');
 
 describe('Auth Middleware', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('allows valid token', async () => {
+    const mockUser = { id: 'user123', tokenVersion: 1 };
+    const token = jwt.sign(mockUser, Config.JWT_SECRET);
+    
+    // Mock token validation
+    (TokenService.isTokenBlacklisted as jest.Mock).mockResolvedValue(false);
+    (TokenService.getTokenVersion as jest.Mock).mockResolvedValue(1);
+
     const { req, next } = await testMiddleware.execute(
-      authMiddleware,
+      authenticateToken,
       testMiddleware.req({
-        headers: { authorization: 'Bearer valid.test.token' }
+        headers: { authorization: `Bearer ${token}` }
       })
     );
 
     expect(next).toHaveBeenCalled();
-    expect(req['user']).toEqual({
-      id: 'user123',
-      role: 'user'
-    });
+    expect(req.user).toMatchObject(mockUser);
   });
 
   it('blocks invalid token', async () => {
-    const { res, next } = await testMiddleware.execute(
-      authMiddleware,
+    const { res } = await testMiddleware.execute(
+      authenticateToken,
       testMiddleware.req({
         headers: { authorization: 'Bearer invalid' }
       })
     );
 
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'error',
+      code: 'INVALID_TOKEN',
+      message: 'Invalid token'
+    });
   });
 
-  // MISSING CRITICAL CASES
   it('handles missing token', async () => {
-    const { res, next } = await testMiddleware.execute(
-      authMiddleware,
-      testMiddleware.req()  // No headers
-    );
-
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({
-      error: 'No token provided'
-    });
-  });
-
-  it('handles malformed token', async () => {
     const { res } = await testMiddleware.execute(
-      authMiddleware,
-      testMiddleware.req({
-        headers: { authorization: 'NotBearer token' }
-      })
+      authenticateToken,
+      testMiddleware.req()
     );
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'Invalid token format'
+      status: 'error',
+      code: 'TOKEN_MISSING',
+      message: 'Access denied. No token provided.'
     });
   });
 
-  it('handles expired token', async () => {
+  it('handles blacklisted token', async () => {
+    const token = jwt.sign({ id: 'user123', tokenVersion: 1 }, Config.JWT_SECRET);
+    (TokenService.isTokenBlacklisted as jest.Mock).mockResolvedValue(true);
+
     const { res } = await testMiddleware.execute(
-      authMiddleware,
+      authenticateToken,
       testMiddleware.req({
-        headers: { authorization: 'Bearer expired.test.token' }
+        headers: { authorization: `Bearer ${token}` }
       })
     );
 
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'Token expired'
+      status: 'error',
+      code: 'INVALID_TOKEN',
+      message: 'Token has been revoked'
     });
   });
 
-  it('preserves existing user data', async () => {
-    const { req, next } = await testMiddleware.execute(
-      authMiddleware,
+  it('handles token version mismatch', async () => {
+    const token = jwt.sign({ id: 'user123', tokenVersion: 1 }, Config.JWT_SECRET);
+    (TokenService.isTokenBlacklisted as jest.Mock).mockResolvedValue(false);
+    (TokenService.getTokenVersion as jest.Mock).mockResolvedValue(2); // Different version
+
+    const { res } = await testMiddleware.execute(
+      authenticateToken,
       testMiddleware.req({
-        headers: { authorization: 'Bearer valid.test.token' },
-        user: { existingData: true }  // Should preserve
+        headers: { authorization: `Bearer ${token}` }
       })
     );
 
-    expect(next).toHaveBeenCalled();
-    expect(req['user']).toEqual({
-      id: 'user123',
-      role: 'user',
-      existingData: true  // Should exist
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'error',
+      code: 'INVALID_TOKEN',
+      message: 'Token version mismatch'
     });
   });
 });

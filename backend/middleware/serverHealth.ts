@@ -5,7 +5,7 @@ import os from 'os';
 
 const logger = loggers.system;
 
-//Clear, and focused metric definitions.
+// Focused metric definitions.
 const healthCheckMetrics = {
     requests: new Counter({
         name: 'system_health_check_requests_total',
@@ -104,7 +104,7 @@ export const healthCheck = async (_req: Request, res: Response): Promise<void> =
     try {
         const metrics = await getSystemMetrics();
         
-        // Update Prometheus metrics
+        // Updates the Prometheus metrics.
         healthCheckMetrics.requests.inc({ status: 'success' });
         healthCheckMetrics.status.set(1);
         healthCheckMetrics.systemMetrics.cpuUsage.set(os.loadavg()[0]);
@@ -135,7 +135,7 @@ export const healthCheck = async (_req: Request, res: Response): Promise<void> =
     }
 };
 
-// Graceful shutdown handling
+// Graceful shutdown handling.
 process.on('SIGTERM', () => {
     healthCheckMetrics.status.set(0);
     logger.info('Health check disabled during shutdown');

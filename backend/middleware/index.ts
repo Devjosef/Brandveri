@@ -24,7 +24,7 @@ const envSchema = z.object({
   REDIS_HOST: z.string(),
   REDIS_PORT: z.string(),
   
-  // Stripe Configuration
+  // Stripe Configuration.
   STRIPE_PUBLIC_KEY: z.string({
     required_error: "Stripe public key is required"
   }).refine((key) => key.startsWith('pk_'), {
@@ -46,7 +46,7 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 });
 
-// Validate environment variables at startup
+// Validates environment variables at startup.
 const validateEnv = () => {
   try {
     return envSchema.parse(process.env);

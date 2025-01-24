@@ -5,7 +5,7 @@ const logger = loggers.test;
 
 // Simple mock factories 
 export const testMiddleware = {
-  // Mock request with defaults.
+  // Mocks request with defaults.
   req: (overrides = {}): Request => ({
     headers: {},
     body: {},
@@ -14,7 +14,7 @@ export const testMiddleware = {
     ...overrides
   } as Request),
 
-  // Mock response with jest functions.
+  // Mocks response with jest functions.
   res: (): Response => ({
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
@@ -22,10 +22,10 @@ export const testMiddleware = {
     locals: {}
   } as unknown as Response),
 
-  // Mock next function.
+  // Mocks next function.
   next: (): NextFunction => jest.fn(),
 
-  // Execute middleware with error logging.
+  // Executes middleware with error logging.
   async execute(
     middleware: (req: Request, res: Response, next: NextFunction) => Promise<void> | void,
     req: Request = testMiddleware.req(),
