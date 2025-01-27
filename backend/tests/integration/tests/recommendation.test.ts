@@ -1,5 +1,5 @@
 import { integration } from './integrationUtility';
-import { testApi } from '../api/baseApi';
+import { testApi } from '../../api/baseApi';
 
 describe('Recommendation Integration', () => {
     it('provides trademark recommendations', async () => {
