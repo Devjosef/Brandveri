@@ -10,7 +10,7 @@ export const constraints = {
       `);
       throw new Error('FK constraint failed');
     } catch (error: unknown) {
-      if ((error as { code?: string }).code !== '23503') { // FK violation
+      if (!DatabaseError.isForeignKeyViolation(error)) {
         throw error;
       }
     }
@@ -26,9 +26,28 @@ export const constraints = {
       `);
       throw new Error('Unique constraint failed');
     } catch (error: unknown) {
-      if ((error as { code?: string }).code !== '23505') { // Unique violation
+      if (!DatabaseError.isUniqueViolation(error)) {
         throw error;
       }
     }
   }
 };
+
+class DatabaseError extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly detail: string,
+    message: string
+  ) {
+    super(message);
+    this.name = 'DatabaseError';
+  }
+
+  static isForeignKeyViolation(error: unknown): error is DatabaseError {
+    return error instanceof DatabaseError && error.code === '23503';
+  }
+
+  static isUniqueViolation(error: unknown): error is DatabaseError {
+    return error instanceof DatabaseError && error.code === '23505';
+  }
+}

@@ -8,7 +8,11 @@ describe('Redis Locks', () => {
     try {
       await testRedis.clear();
     } catch (error) {
-      logger.error({ error }, 'Failed to clear Redis');
+      if (error instanceof Error && error.name === 'ConnectionError') {
+        logger.error({ error }, 'Redis connection failed');
+      } else if (error instanceof Error && error.name === 'ReplyError') {
+        logger.error({ error }, 'Redis command failed'); 
+      }
       throw error;
     }
   });

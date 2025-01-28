@@ -3,7 +3,7 @@ import { loggers } from '../../observability/contextLoggers';
 
 const logger = loggers.test;
 
-// Simple database utility - no classes needed
+// Simple database utility
 export const testDb = {
   pool: new Pool({
     user: process.env.TEST_DB_USER,

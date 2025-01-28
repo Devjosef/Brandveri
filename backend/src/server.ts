@@ -41,7 +41,7 @@ import { recommendationRoutes } from './recommendationengine/routes/recommendati
 
 
 class Server {
-  private app: Express;
+  public app: Express;
   private server: ReturnType<typeof createServer>;
   private isShuttingDown: boolean = false;
 

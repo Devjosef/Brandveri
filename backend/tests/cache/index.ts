@@ -48,22 +48,30 @@ export const cachePatterns = {
   }
 };
 
-// Export test cleanup utilities.
+// Comprehensive cleanup
 export const cleanup = {
-  /**
-   * Clears all test data
-   */
   async all() {
     await testRedis.clear();
+    await testRedis.client.script('FLUSH');
   },
-
-  /**
-   * Clears specific patterns.
-   */
-  async pattern(pattern: string) {
+  async keys(pattern: string) {
     const keys = await testRedis.client.keys(pattern);
     if (keys.length) {
       await testRedis.client.del(...keys);
+    }
+  },
+  async subscribers() {
+    const clients = (await testRedis.client.client('LIST')) as string;
+    const clientList = clients.split('\n').filter(Boolean);
+    
+    // Close all subscriber connections
+    for (const client of clientList) {
+      if (client.includes('flags=S')) {
+        const id = client.match(/id=(\d+)/)?.[1];
+        if (id) {
+          await testRedis.client.client('KILL', `id ${id}`);
+        }
+      }
     }
   }
 };

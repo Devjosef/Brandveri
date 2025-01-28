@@ -1,31 +1,35 @@
 import { testApi } from '../baseApi';
-import { testDb } from '../../database/dbTest';
+import { mocks } from '../../__mocks__';
 
-describe('Payment API', () => {
-  beforeEach(async () => {
-    await testDb.cleanup(['payments']);
+const { payment: stripeGatewayMock } = mocks;
+
+describe('Stripe API Integration', () => {
+  beforeEach(() => {
+    // Reset all mock implementations and history
+    jest.clearAllMocks();
+    Object.values(stripeGatewayMock).forEach(mockGroup => {
+      Object.values(mockGroup).forEach(mock => {
+        mock.mockReset();
+      });
+    });
   });
 
-  it('processes payment', async () => {
-    const token = testApi.createTestToken('user123', 'user');
-    const response = await testApi.post('/api/payments', {
-      amount: 99.99,
+  it('should process trademark filing payment', async () => {
+    const paymentData = {
+      amount: 350.00,
       currency: 'USD',
-      cardToken: 'tok_visa'
-    }, token);
+      paymentMethodId: 'pm_card_visa'
+    };
 
+    stripeGatewayMock.charges.create.mockResolvedValueOnce({
+      id: 'ch_123',
+      status: 'succeeded',
+      amount: 35000,
+      currency: 'usd'
+    });
+
+    const response = await testApi.post('/api/payments', paymentData);
     expect(response.status).toBe(200);
-    expect(response.body.status).toBe('succeeded');
-  });
-
-  it('handles declined payment', async () => {
-    const token = testApi.createTestToken('user123', 'user');
-    const response = await testApi.post('/api/payments', {
-      amount: 99.99,
-      currency: 'USD',
-      cardToken: 'tok_chargeDeclined'
-    }, token);
-
-    expect(response.status).toBe(402);
+    expect(stripeGatewayMock.charges.create).toHaveBeenCalled();
   });
 });

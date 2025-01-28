@@ -1,23 +1,53 @@
 import supertest from 'supertest';
+import server from '../../src/server';
 import { mocks } from '../__mocks__';
+import crypto from 'crypto';
 
+const { logger: loggerMock } = mocks;
 
-const { loggerMock } = mocks;
-const request = supertest(app);
+const request = supertest(server.app); // Accessing  the Express app from server
 
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+
+/**
+ * Custom API test error with request details
+ */
+class ApiTestError extends Error {
+  constructor(
+    public readonly method: HttpMethod,
+    public readonly path: string,
+    public readonly details: string,
+    public readonly data?: unknown
+  ) {
+    super(`API Test Error: ${method} ${path} - ${details}`);
+    this.name = 'ApiTestError';
+  }
+}
 
 /**
  * Test API client for making HTTP requests in tests.
  * Handles common patterns like auth, logging, and error handling.
  */
 export class TestApi {
+  public static readonly DEFAULT_TIMEOUTS = {
+    default: 5000,
+    upload: 10000,
+    download: 15000
+  } as const;
+
+  private readonly timeouts: typeof TestApi.DEFAULT_TIMEOUTS;
+
+  constructor(customTimeouts?: Partial<typeof TestApi.DEFAULT_TIMEOUTS>) {
+    this.timeouts = { ...TestApi.DEFAULT_TIMEOUTS, ...customTimeouts };
+  }
+
   private readonly defaultTimeout = 5000;
 
   /**
    * Make a GET request
    */
   async get(path: string, token?: string, query?: Record<string, string>) {
+    this.validatePath(path);
     return this.request('GET', path, undefined, token, query);
   }
 
@@ -53,7 +83,16 @@ export class TestApi {
     query?: Record<string, string>
   ) {
     try {
-      let req = request[method.toLowerCase()](path);
+      const isValidMethod = (method: string): method is Lowercase<HttpMethod> => 
+        ['get', 'post', 'put', 'delete'].includes(method);
+
+      type LowercaseHttpMethod = Lowercase<HttpMethod>;
+      const requestMethod = method.toLowerCase() as LowercaseHttpMethod;
+      if (!isValidMethod(requestMethod)) {
+        throw new ApiTestError(method, path, `Invalid HTTP method: ${method}`);
+      }
+
+      let req = request[requestMethod](path);
 
       if (query) {
         req = req.query(query);
@@ -69,45 +108,68 @@ export class TestApi {
           .set('Content-Type', 'application/json');
       }
 
-      req = req.timeout(this.defaultTimeout);
+      req = req.timeout(
+        path.includes('/upload') ? this.timeouts.upload : 
+        path.includes('/download') ? this.timeouts.download : 
+        this.timeouts.default
+      );
 
+      const startTime = Date.now();
       const response = await req;
+      const duration = Date.now() - startTime;
       
-      loggerMock.debug({
+      loggerMock.debug('API request completed', {
         method,
         path,
         status: response.status,
-        duration: response.duration
-      }, 'API request completed');
+        duration,
+        query: query || undefined,
+        hasToken: !!token,
+        hasData: !!data,
+        timestamp: new Date().toISOString()
+      });
 
       return response;
-    } catch (error) {
-      if (error.timeout) {
-        throw testErrors.api({
+    } catch (error: unknown) {
+      if (error && typeof error === 'object' && 'timeout' in error) {
+        throw new ApiTestError(
           method,
           path,
-          error: `Request timed out after ${this.defaultTimeout}ms`
-        });
+          `Request timed out after ${this.defaultTimeout}ms`
+        );
       }
 
-      throw testErrors.api({
+      throw new ApiTestError(
         method,
         path,
-        data,
-        error: error instanceof Error ? error.message : String(error)
-      });
+        error instanceof Error ? error.message : String(error),
+        data
+      );
     }
   }
 
   /**
    * Create a test auth token
    */
-  createTestToken(userId: string, roles: string[] = ['user']): string {
+  createTestToken(
+    userId: string, 
+    roles: string[] = ['user'],
+    expiresIn: number = 3600
+  ): string {
+    const now = Date.now();
     return Buffer.from(JSON.stringify({
       sub: userId,
       roles,
-      exp: Date.now() + 3600000
+      iat: Math.floor(now / 1000),
+      exp: Math.floor(now / 1000) + expiresIn,
+      jti: crypto.randomUUID()
     })).toString('base64');
+  }
+
+  private validatePath(path: string): void {
+    if (!path.startsWith('/')) {
+      throw new ApiTestError('GET', path, 'Path must start with /');
+    }
   }
 }
 

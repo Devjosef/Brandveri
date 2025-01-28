@@ -1,21 +1,30 @@
 import { testDb } from './dbTest';
 import { loggers } from '../../observability/contextLoggers';
+import { QueryResult } from 'pg';
 
 const logger = loggers.test;
 
+
+interface TransactionClient {
+  query<T extends Record<string, unknown>>(sql: string, params?: unknown[]): Promise<QueryResult<T>>;
+  release(): void;
+}
+
 export const transactions = {
   async withTransaction<T>(
-    callback: (client: typeof testDb) => Promise<T>
+    callback: (client: TransactionClient) => Promise<T>,
+    _options?: { 
+      isolation?: 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE',
+      timeout?: number 
+    }
   ): Promise<T> {
     const client = await testDb.pool.connect();
     
     try {
       await client.query('BEGIN');
       const result = await callback({
-        pool: testDb.pool,
         query: client.query.bind(client),
-        cleanup: testDb.cleanup.bind(testDb),
-        close: testDb.close.bind(testDb)
+        release: client.release.bind(client)
       });
       await client.query('COMMIT');
       return result;

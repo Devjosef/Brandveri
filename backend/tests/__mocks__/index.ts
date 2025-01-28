@@ -5,6 +5,7 @@ import { loggerMock } from './logger';
 import { metricsMock } from './metrics';
 import { paymentGatewayMock } from './payment';
 import { usptoMock, euipoMock } from './trademark';
+import { openAIMock } from './openai';
 
 // Infrastructure mocks
 export { 
@@ -56,7 +57,7 @@ export type * from './types/metricsTypes';
 export type * from './types/loggerTypes';
 
 // Default mocks object for easy access
-export const mocks = {
+export const createMocks = () => ({
   // Infrastructure
   db: dbMock,
   cache: cacheMock,
@@ -65,11 +66,14 @@ export const mocks = {
   uspto: usptoMock,
   euipo: euipoMock,
   payment: paymentGatewayMock,
-  
+  openai: openAIMock,
   // Providers
   auth: authMock,
   
   // Observability
   metrics: metricsMock,
-  logger: loggerMock
-} as const;
+  logger: loggerMock,
+}) as const;
+
+export type Mocks = ReturnType<typeof createMocks>;
+export const mocks = createMocks();
